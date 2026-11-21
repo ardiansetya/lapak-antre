@@ -24,7 +24,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
 import { Spinner } from "@/components/ui/spinner"
 import { useOnline } from "@/hooks/use-online"
-import { cancelTicket } from "@/lib/actions"
+import { cancelTicket, savePushSubscription } from "@/lib/actions"
 import type { TicketStatus } from "@/lib/queue"
 import { cn } from "@/lib/utils"
 
@@ -38,14 +38,15 @@ function readPermission(): NotificationPermission | "unsupported" {
   return "Notification" in window ? Notification.permission : "unsupported"
 }
 
-async function notify(title: string, body: string) {
+async function notify(title: string, body: string, tag: string) {
   navigator.vibrate?.(300)
   if (readPermission() === "granted") {
     try {
       // Through the service worker: Android Chrome rejects `new Notification()`.
+      // Same tag as the server push for this ticket, so the phone shows one notification.
       const registration = await navigator.serviceWorker?.getRegistration()
-      if (registration) await registration.showNotification(title, { body, data: { url: location.pathname } })
-      else new Notification(title, { body })
+      if (registration) await registration.showNotification(title, { body, tag, data: { url: location.pathname } })
+      else new Notification(title, { body, tag })
       return
     } catch {
       // Falls through to the in-page toast.
@@ -54,20 +55,35 @@ async function notify(title: string, body: string) {
   toast(title, { description: body })
 }
 
-/** Registers the service worker and asks it to keep this page and its assets for offline use. */
-function useOfflineTicket() {
+const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+const PUSH_ENABLED = Boolean(VAPID_KEY)
+
+function base64UrlToBytes(base64Url: string) {
+  const base64 = (base64Url + "=".repeat((4 - (base64Url.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/")
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+}
+
+/** Subscribes this browser to server push for the ticket. Returns false when push is unavailable. */
+async function subscribePush(token: string) {
+  if (!PUSH_ENABLED || !("serviceWorker" in navigator) || !("PushManager" in window)) return false
+  const registration = await navigator.serviceWorker.ready
+  const subscription =
+    (await registration.pushManager.getSubscription()) ??
+    (await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(VAPID_KEY!) }))
+  const result = await savePushSubscription(token, subscription.toJSON())
+  return !result?.error
+}
+
+/** Registers the service worker; in production it also keeps this page and its assets for offline use. */
+function useServiceWorker() {
   useEffect(() => {
     if (!("serviceWorker" in navigator)) return
-    // Dev chunks keep the same URL while their content changes, so the worker's cache-first
-    // rule would serve stale code. Production only, and clear a worker left from earlier.
-    if (process.env.NODE_ENV !== "production") {
-      navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()))
-      return
-    }
+    const dev = process.env.NODE_ENV !== "production"
     navigator.serviceWorker
-      .register("/sw.js")
+      .register(dev ? "/sw.js?dev=1" : "/sw.js")
       .then(() => navigator.serviceWorker.ready)
       .then((registration) => {
+        if (dev) return
         const assets = performance
           .getEntriesByType("resource")
           .map((entry) => entry.name)
@@ -75,7 +91,7 @@ function useOfflineTicket() {
         registration.active?.postMessage({ type: "cache-page", url: location.href, assets })
       })
       .catch(() => {
-        // Offline support is a bonus; the live page works without it.
+        // Offline support and push are a bonus; the live page works without them.
       })
   }, [])
 }
@@ -104,7 +120,13 @@ export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; rendere
   const permission = useSyncExternalStore(subscribePermission, readPermission, () => "default" as const)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelling, startCancel] = useTransition()
-  useOfflineTicket()
+  useServiceWorker()
+
+  // Already allowed (e.g. a second ticket): bind this ticket to the browser's push subscription.
+  const { token } = ticket
+  useEffect(() => {
+    if (readPermission() === "granted") subscribePush(token).catch(() => {})
+  }, [token])
 
   // Notify on the transitions that matter: getting close, and being called.
   const prev = useRef({ status, ahead })
@@ -112,9 +134,9 @@ export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; rendere
     const before = prev.current
     prev.current = { status, ahead }
     if (status === "CALLED" && before.status !== "CALLED")
-      notify(`Nomor ${code} dipanggil`, `Silakan menuju ${ticket.counterName ?? "loket"} sekarang.`)
+      notify(`Nomor ${code} dipanggil`, `Silakan menuju ${ticket.counterName ?? "loket"} sekarang.`, code)
     else if (status === "WAITING" && ahead < notifyAhead && before.ahead >= notifyAhead)
-      notify("Giliran Anda sudah dekat", ahead === 0 ? "Anda berikutnya." : `Tinggal ${ahead} orang lagi.`)
+      notify("Giliran Anda sudah dekat", ahead === 0 ? "Anda berikutnya." : `Tinggal ${ahead} orang lagi.`, code)
   }, [status, ahead, notifyAhead, code, ticket.counterName])
 
   async function enableNotifications() {
@@ -124,7 +146,9 @@ export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; rendere
     }
     await Notification.requestPermission()
     permissionListeners.forEach((cb) => cb())
-    if (readPermission() === "granted") toast.success("Notifikasi aktif")
+    if (readPermission() !== "granted") return
+    const pushed = await subscribePush(token).catch(() => false)
+    toast.success(pushed ? "Notifikasi aktif, juga saat halaman ditutup" : "Notifikasi aktif selama halaman ini terbuka")
   }
 
   function confirmCancel() {
@@ -236,8 +260,10 @@ export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; rendere
             <ItemTitle>{permission === "granted" ? "Notifikasi aktif" : "Kabari saya saat giliran dekat"}</ItemTitle>
             <ItemDescription className="line-clamp-none">
               {permission === "granted"
-                ? `Kami kabari saat tinggal ${notifyAhead} orang dan saat Anda dipanggil, selama halaman ini terbuka.`
-                : "Aktifkan supaya HP bergetar saat giliran Anda dekat."}
+                ? `Kami kabari saat tinggal ${notifyAhead} orang dan saat Anda dipanggil${PUSH_ENABLED ? ", walaupun halaman ini ditutup" : ", selama halaman ini terbuka"}.`
+                : PUSH_ENABLED
+                  ? "Aktifkan, lalu Anda boleh menutup halaman ini. Kami kabari saat giliran dekat."
+                  : "Aktifkan supaya HP bergetar saat giliran Anda dekat."}
             </ItemDescription>
           </ItemContent>
           {permission !== "granted" && (

@@ -143,16 +143,32 @@ model Ticket {
   status           TicketStatus @default(WAITING)
   callCount        Int          @default(0)
   predictedMinutes Int?
+  /// set once the "almost your turn" push went out, so it is sent at most once
+  nearNotifiedAt   DateTime?
   createdAt        DateTime     @default(now())
   calledAt         DateTime?
   servingAt        DateTime?
   doneAt           DateTime?
   service          Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   counter          Counter?     @relation(fields: [counterId], references: [id], onDelete: SetNull)
+  pushSubscriptions PushSubscription[]
 
   @@unique([serviceId, date, number])
   @@index([branchId, date, status])
   @@index([serviceId, date, status])
+}
+
+/// A browser that asked to be told about one ticket (PRD N-1). One ticket can have several devices.
+model PushSubscription {
+  id        String   @id @default(cuid())
+  ticketId  String
+  endpoint  String   @unique @db.VarChar(512)
+  p256dh    String   @db.VarChar(255)
+  auth      String   @db.VarChar(255)
+  createdAt DateTime @default(now())
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
 }
 
 enum TicketStatus {

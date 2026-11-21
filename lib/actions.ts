@@ -3,11 +3,13 @@
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
+import { after } from "next/server"
 
 import { createSession, destroySession, requireStaff, type Staff } from "@/lib/auth"
 import { hashPassword, isValidQrCode, localDate, randomToken, verifyPassword } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { estimateWait, formatTicketCode } from "@/lib/queue"
+import { notifyQueue } from "@/lib/push"
 import { todayFor } from "@/lib/queries"
 import { nextTicketNumber } from "@/lib/ticket-number"
 import { rules, validate } from "@/lib/validation"
@@ -87,6 +89,26 @@ export async function takeTicket(input: {
   redirect(`/tiket/${token}`)
 }
 
+/** Stores a browser's push subscription for a ticket. Public: the ticket's access token is the only credential. */
+export async function savePushSubscription(
+  token: string,
+  subscription: { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } },
+) {
+  const endpoint = text(subscription?.endpoint)
+  const p256dh = text(subscription?.keys?.p256dh)
+  const auth = text(subscription?.keys?.auth)
+  if (!endpoint.startsWith("https://") || endpoint.length > 512 || !p256dh || !auth || p256dh.length > 255 || auth.length > 255)
+    return { error: "Langganan notifikasi tidak valid." }
+  const ticket = await db.ticket.findUnique({ where: { accessToken: text(token) }, select: { id: true, status: true } })
+  if (!ticket || !["WAITING", "CALLED", "SERVING"].includes(ticket.status)) return { error: "Tiket ini sudah tidak aktif." }
+  // One browser follows one ticket: re-subscribing from a new ticket moves the endpoint over.
+  await db.pushSubscription.upsert({
+    where: { endpoint },
+    create: { ticketId: ticket.id, endpoint, p256dh, auth },
+    update: { ticketId: ticket.id, p256dh, auth },
+  })
+}
+
 export async function cancelTicket(token: string) {
   if (token === "demo") return { error: "Tiket contoh tidak bisa dibatalkan. Ambil nomor sendiri untuk mencoba." }
   const ticket = await db.ticket.findUnique({ where: { accessToken: token } })
@@ -130,7 +152,10 @@ export async function callNext(counterId: string) {
       where: { id: next.id, status: "WAITING" },
       data: { status: "CALLED", counterId, calledAt: new Date(), callCount: 1 },
     })
-    if (claimed.count === 1) return afterStaffChange(staff.branch.id)
+    if (claimed.count === 1) {
+      after(() => notifyQueue(next.id))
+      return afterStaffChange(staff.branch.id)
+    }
   }
   return { error: "Antrean sedang ramai, coba lagi." }
 }
@@ -142,17 +167,18 @@ export async function updateTicket(ticketId: string, action: Transition) {
   const ticket = await staffTicket(staff, ticketId)
   if (!ticket) return { error: "Tiket tidak ditemukan." }
   const now = new Date()
-  const rules: Record<Transition, { from: string[]; data: object }> = {
+  const transitions: Record<Transition, { from: string[]; data: object }> = {
     recall: { from: ["CALLED"], data: { callCount: { increment: 1 }, calledAt: now } },
     start: { from: ["CALLED"], data: { status: "SERVING", servingAt: now } },
     finish: { from: ["CALLED", "SERVING"], data: { status: "DONE", servingAt: ticket.servingAt ?? now, doneAt: now } },
     noShow: { from: ["CALLED"], data: { status: "NO_SHOW", doneAt: now } },
     restore: { from: ["NO_SHOW"], data: { status: "WAITING", counterId: null, calledAt: null, doneAt: null, callCount: 0 } },
   }
-  const rule = rules[action]
+  const rule = transitions[action]
   if (!rule.from.includes(ticket.status)) return { error: "Status tiket sudah berubah. Muat ulang halaman." }
   if (action === "recall" && ticket.callCount >= 3) return { error: "Sudah dipanggil 3 kali." }
   await db.ticket.update({ where: { id: ticket.id }, data: rule.data })
+  if (action === "recall") after(() => notifyQueue(ticket.id))
   return afterStaffChange(staff.branch.id)
 }
 
