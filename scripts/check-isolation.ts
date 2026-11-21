@@ -10,7 +10,7 @@ import { PrismaClient } from "../generated/prisma/client"
 import { hashPassword } from "../lib/crypto"
 import { createAdapter } from "../lib/db-adapter"
 
-const BASE = "http://localhost:3100"
+const BASE = process.env.BASE_URL ?? "http://localhost:3100"
 const db = new PrismaClient({ adapter: createAdapter() })
 // Strings that exist only in the seeded demo clinic.
 const DEMO_ONLY = ["Kasih Ibu", "Poli Gigi", "Ruang Periksa", "Loket Apotek", "Margonda"]
