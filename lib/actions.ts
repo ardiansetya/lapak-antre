@@ -10,26 +10,32 @@ import { db } from "@/lib/db"
 import { estimateWait, formatTicketCode } from "@/lib/queue"
 import { todayFor } from "@/lib/queries"
 import { nextTicketNumber } from "@/lib/ticket-number"
+import { rules, validate } from "@/lib/validation"
 
 export type FormState = { error?: string; fieldErrors?: Record<string, string> } | undefined
 
-const text = (data: FormData, key: string) => String(data.get(key) ?? "").trim()
+// Server actions are public endpoints: inputs arrive untyped, so every field is coerced and re-validated here.
+const text = (value: unknown) => String(value ?? "").trim()
 const bump = (branchId: string) => db.branch.update({ where: { id: branchId }, data: { version: { increment: 1 } } })
 
 // ---------- Public: customers ----------
 
-export async function takeTicket(_prev: FormState, data: FormData): Promise<FormState> {
-  const name = text(data, "name")
-  const phone = text(data, "phone").replace(/[^\d+]/g, "")
-  const serviceId = text(data, "serviceId")
-  if (name.length < 2 || name.length > 40)
-    return { fieldErrors: { name: "Isi nama panggilan 2-40 huruf supaya petugas bisa memanggil Anda." } }
-  if (phone && !/^\+?\d{9,15}$/.test(phone)) return { fieldErrors: { phone: "Nomor HP belum benar." } }
+export async function takeTicket(input: {
+  branch: string
+  k: string
+  serviceId: string
+  name: string
+  phone: string
+}): Promise<FormState> {
+  const fieldErrors = validate(input, { name: rules.customerName, phone: rules.phone })
+  if (fieldErrors) return { fieldErrors }
+  const name = text(input.name)
+  const phone = text(input.phone).replace(/[^\d+]/g, "")
 
-  const service = await db.service.findUnique({ where: { id: serviceId }, include: { branch: true } })
-  if (!service || service.branch.slug !== text(data, "branch")) return { error: "Layanan tidak ditemukan." }
+  const service = await db.service.findUnique({ where: { id: text(input.serviceId) }, include: { branch: true } })
+  if (!service || service.branch.slug !== text(input.branch)) return { error: "Layanan tidak ditemukan." }
   const { branch } = service
-  if (!isValidQrCode(branch.qrSecret, localDate(branch.timezone), text(data, "k")))
+  if (!isValidQrCode(branch.qrSecret, localDate(branch.timezone), text(input.k)))
     return { error: "QR sudah kedaluwarsa. Scan ulang QR yang terpasang di lokasi." }
   if (!service.isOpen) return { error: `${service.name} sedang tutup.` }
 
@@ -162,16 +168,13 @@ export async function setServiceOpen(serviceId: string, isOpen: boolean) {
   return afterStaffChange(staff.branch.id)
 }
 
-export async function addService(_prev: FormState, data: FormData): Promise<FormState> {
+export async function addService(input: { name: string; prefix: string; minutes: string }): Promise<FormState> {
   const staff = await requireStaff()
-  const name = text(data, "name")
-  const prefix = text(data, "prefix").toUpperCase()
-  const minutes = Number(text(data, "minutes"))
-  const fieldErrors: Record<string, string> = {}
-  if (name.length < 3 || name.length > 60) fieldErrors.name = "Nama layanan 3-60 huruf."
-  if (!/^[A-Z]{1,3}$/.test(prefix)) fieldErrors.prefix = "Gunakan 1-3 huruf, misalnya E."
-  if (!Number.isInteger(minutes) || minutes < 1 || minutes > 240) fieldErrors.minutes = "Isi antara 1 dan 240 menit."
-  if (Object.keys(fieldErrors).length) return { fieldErrors }
+  const fieldErrors = validate(input, { name: rules.serviceName, prefix: rules.prefix, minutes: rules.minutes })
+  if (fieldErrors) return { fieldErrors }
+  const name = text(input.name)
+  const prefix = text(input.prefix).toUpperCase()
+  const minutes = Number(input.minutes)
   if (await db.service.findFirst({ where: { branchId: staff.branch.id, prefix } }))
     return { fieldErrors: { prefix: `Huruf ${prefix} sudah dipakai layanan lain.` } }
 
@@ -194,9 +197,9 @@ export async function addService(_prev: FormState, data: FormData): Promise<Form
 
 const RESERVED_SLUGS = new Set(["api", "dashboard", "daftar", "masuk", "tiket", "demo", "manifest.webmanifest", "robots.txt", "sitemap.xml"])
 
-export async function login(_prev: FormState, data: FormData): Promise<FormState> {
-  const email = text(data, "email").toLowerCase()
-  const password = String(data.get("password") ?? "")
+export async function login(input: { email: string; password: string }): Promise<FormState> {
+  const email = text(input.email).toLowerCase()
+  const password = String(input.password ?? "")
   const user = await db.user.findUnique({ where: { email } })
   // Same message for unknown email and wrong password, so emails can't be probed.
   if (!user || !verifyPassword(password, user.passwordHash)) return { error: "Email atau kata sandi salah." }
@@ -204,15 +207,12 @@ export async function login(_prev: FormState, data: FormData): Promise<FormState
   redirect("/dashboard")
 }
 
-export async function register(_prev: FormState, data: FormData): Promise<FormState> {
-  const business = text(data, "business")
-  const email = text(data, "email").toLowerCase()
-  const password = String(data.get("password") ?? "")
-  const fieldErrors: Record<string, string> = {}
-  if (business.length < 3 || business.length > 80) fieldErrors.business = "Nama usaha 3-80 huruf."
-  if (!/^\S+@\S+\.\S+$/.test(email)) fieldErrors.email = "Format email belum benar."
-  if (password.length < 8) fieldErrors.password = "Kata sandi minimal 8 karakter."
-  if (Object.keys(fieldErrors).length) return { fieldErrors }
+export async function register(input: { business: string; email: string; password: string }): Promise<FormState> {
+  const fieldErrors = validate(input, { business: rules.business, email: rules.email, password: rules.newPassword })
+  if (fieldErrors) return { fieldErrors }
+  const business = text(input.business)
+  const email = text(input.email).toLowerCase()
+  const password = String(input.password)
   if (await db.user.findUnique({ where: { email } })) return { fieldErrors: { email: "Email ini sudah terdaftar." } }
 
   const base = business.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "usaha"

@@ -1,20 +1,22 @@
 "use client"
 
-import { useActionState } from "react"
+import { useState } from "react"
 import Link from "next/link"
+import { useForm } from "@tanstack/react-form"
 import { TriangleAlertIcon } from "lucide-react"
 
+import { TextField } from "@/components/text-field"
 import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FieldDescription, FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { login, register } from "@/lib/actions"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { rules } from "@/lib/validation"
 
 const COPY = {
   login: {
-    action: login,
     title: "Masuk ke dashboard",
     description: "Untuk pemilik usaha dan petugas loket.",
     submit: "Masuk",
@@ -23,7 +25,6 @@ const COPY = {
     switchHref: "/daftar",
   },
   register: {
-    action: register,
     title: "Buat akun usaha",
     description: "Gratis. Kami siapkan satu cabang, satu layanan, dan satu loket untuk Anda.",
     submit: "Buat akun",
@@ -35,8 +36,18 @@ const COPY = {
 
 export function AuthForm({ mode, demo }: { mode: keyof typeof COPY; demo?: { email: string; password: string } }) {
   const copy = COPY[mode]
-  const [state, action, pending] = useActionState(copy.action, undefined)
-  const errors = state?.fieldErrors ?? {}
+  const [formError, setFormError] = useState<string>()
+  const form = useForm({
+    defaultValues: { business: "", email: demo?.email ?? "", password: demo?.password ?? "" },
+    listeners: clearServerErrorOnChange,
+    onSubmit: async ({ value }) => {
+      setFormError(undefined)
+      // On success both actions redirect to the dashboard, so only failures return here.
+      const result = mode === "login" ? await login(value) : await register(value)
+      setFormError(result?.error)
+      applyServerErrors(form, result?.fieldErrors)
+    },
+  })
 
   return (
     <Card>
@@ -45,55 +56,48 @@ export function AuthForm({ mode, demo }: { mode: keyof typeof COPY; demo?: { ema
         <CardDescription>{copy.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={action} noValidate>
+        <form
+          noValidate
+          onSubmit={(e) => {
+            e.preventDefault()
+            form.handleSubmit()
+          }}
+        >
           <FieldGroup>
-            {state?.error && (
+            {formError && (
               <Alert variant="destructive">
                 <TriangleAlertIcon />
-                <AlertTitle>{state.error}</AlertTitle>
+                <AlertTitle>{formError}</AlertTitle>
               </Alert>
             )}
             {mode === "register" && (
-              <Field data-invalid={errors.business ? true : undefined}>
-                <FieldLabel htmlFor="business">Nama usaha</FieldLabel>
-                <Input id="business" name="business" placeholder="Klinik Pratama Kasih Ibu" required aria-invalid={errors.business ? true : undefined} />
-                <FieldError>{errors.business}</FieldError>
-              </Field>
+              <form.Field name="business" validators={fieldRule(rules.business)}>
+                {(field) => <TextField field={field} label="Nama usaha" placeholder="Klinik Pratama Kasih Ibu" required />}
+              </form.Field>
             )}
-            <Field data-invalid={errors.email ? true : undefined}>
-              <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input
-                id="email"
-                name="email"
-                type="email"
-                autoComplete="email"
-                required
-                defaultValue={demo?.email}
-                aria-invalid={errors.email ? true : undefined}
-              />
-              <FieldError>{errors.email}</FieldError>
-            </Field>
-            <Field data-invalid={errors.password ? true : undefined}>
-              <FieldLabel htmlFor="password">Kata sandi</FieldLabel>
-              <Input
-                id="password"
-                name="password"
-                type="password"
-                autoComplete={mode === "login" ? "current-password" : "new-password"}
-                required
-                defaultValue={demo?.password}
-                aria-invalid={errors.password ? true : undefined}
-              />
-              {errors.password ? (
-                <FieldError>{errors.password}</FieldError>
-              ) : (
-                mode === "register" && <FieldDescription>Minimal 8 karakter.</FieldDescription>
+            <form.Field name="email" validators={fieldRule(rules.email)}>
+              {(field) => <TextField field={field} label="Email" type="email" autoComplete="email" required />}
+            </form.Field>
+            <form.Field name="password" validators={fieldRule(mode === "login" ? rules.password : rules.newPassword)}>
+              {(field) => (
+                <TextField
+                  field={field}
+                  label="Kata sandi"
+                  type="password"
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  description={mode === "register" ? "Minimal 8 karakter." : undefined}
+                  required
+                />
               )}
-            </Field>
-            <Button type="submit" size="lg" className="h-11 w-full text-base" disabled={pending}>
-              {pending && <Spinner data-icon="inline-start" />}
-              {copy.submit}
-            </Button>
+            </form.Field>
+            <form.Subscribe selector={(s) => s.isSubmitting}>
+              {(submitting) => (
+                <Button type="submit" size="lg" className="h-11 w-full text-base" disabled={submitting}>
+                  {submitting && <Spinner data-icon="inline-start" />}
+                  {copy.submit}
+                </Button>
+              )}
+            </form.Subscribe>
             {demo && (
               <FieldDescription className="text-center">
                 Akun demo sudah terisi: {demo.email} / {demo.password}

@@ -38,17 +38,46 @@ function readPermission(): NotificationPermission | "unsupported" {
   return "Notification" in window ? Notification.permission : "unsupported"
 }
 
-function notify(title: string, body: string) {
+async function notify(title: string, body: string) {
   navigator.vibrate?.(300)
   if (readPermission() === "granted") {
     try {
-      new Notification(title, { body })
+      // Through the service worker: Android Chrome rejects `new Notification()`.
+      const registration = await navigator.serviceWorker?.getRegistration()
+      if (registration) await registration.showNotification(title, { body, data: { url: location.pathname } })
+      else new Notification(title, { body })
       return
     } catch {
-      // Android Chrome only allows notifications from a service worker. Falls through to toast.
+      // Falls through to the in-page toast.
     }
   }
   toast(title, { description: body })
+}
+
+/** Registers the service worker and asks it to keep this page and its assets for offline use. */
+function useOfflineTicket() {
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return
+    // Dev chunks keep the same URL while their content changes, so the worker's cache-first
+    // rule would serve stale code. Production only, and clear a worker left from earlier.
+    if (process.env.NODE_ENV !== "production") {
+      navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()))
+      return
+    }
+    navigator.serviceWorker
+      .register("/sw.js")
+      .then(() => navigator.serviceWorker.ready)
+      .then((registration) => {
+        const assets = performance
+          .getEntriesByType("resource")
+          .map((entry) => entry.name)
+          .filter((name) => name.startsWith(`${location.origin}/_next/static/`))
+        registration.active?.postMessage({ type: "cache-page", url: location.href, assets })
+      })
+      .catch(() => {
+        // Offline support is a bonus; the live page works without it.
+      })
+  }, [])
 }
 
 export type TicketView = {
@@ -75,6 +104,7 @@ export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; rendere
   const permission = useSyncExternalStore(subscribePermission, readPermission, () => "default" as const)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelling, startCancel] = useTransition()
+  useOfflineTicket()
 
   // Notify on the transitions that matter: getting close, and being called.
   const prev = useRef({ status, ahead })

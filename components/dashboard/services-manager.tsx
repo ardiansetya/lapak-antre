@@ -1,9 +1,11 @@
 "use client"
 
-import { useActionState, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
+import { useForm } from "@tanstack/react-form"
 import { PlusIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { TextField } from "@/components/text-field"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -17,12 +19,13 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { addService, setServiceOpen, type FormState } from "@/lib/actions"
+import { addService, setServiceOpen } from "@/lib/actions"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { rules } from "@/lib/validation"
 
 type ServiceRow = {
   id: string
@@ -37,16 +40,19 @@ type CounterRow = { id: string; name: string; isActive: boolean; serviceIds: str
 
 function AddServiceDialog() {
   const [open, setOpen] = useState(false)
-  // Wrap the action so a successful save (no state returned) closes the dialog.
-  const [state, action, pending] = useActionState(async (prev: FormState, data: FormData) => {
-    const result = await addService(prev, data)
-    if (!result) {
+  const form = useForm({
+    defaultValues: { name: "", prefix: "", minutes: "10" },
+    listeners: clearServerErrorOnChange,
+    onSubmit: async ({ value }) => {
+      const result = await addService(value)
+      if (result?.error) toast.error(result.error)
+      applyServerErrors(form, result?.fieldErrors)
+      if (result) return
       setOpen(false)
+      form.reset()
       toast.success("Layanan ditambahkan dan dilayani semua loket aktif.")
-    }
-    return result
-  }, undefined)
-  const errors = state?.fieldErrors ?? {}
+    },
+  })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -55,36 +61,45 @@ function AddServiceDialog() {
         Tambah layanan
       </DialogTrigger>
       <DialogContent>
-        <form action={action} noValidate className="flex flex-col gap-6">
+        <form
+          noValidate
+          className="flex flex-col gap-6"
+          onSubmit={(e) => {
+            e.preventDefault()
+            form.handleSubmit()
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Tambah layanan</DialogTitle>
             <DialogDescription>Setiap layanan punya antrean dan huruf nomor sendiri.</DialogDescription>
           </DialogHeader>
           <FieldGroup>
-            <Field data-invalid={errors.name ? true : undefined}>
-              <FieldLabel htmlFor="svc-name">Nama layanan</FieldLabel>
-              <Input id="svc-name" name="name" placeholder="Poli Anak" aria-invalid={errors.name ? true : undefined} />
-              <FieldError>{errors.name}</FieldError>
-            </Field>
+            <form.Field name="name" validators={fieldRule(rules.serviceName)}>
+              {(field) => <TextField field={field} label="Nama layanan" placeholder="Poli Anak" />}
+            </form.Field>
             <div className="grid gap-5 sm:grid-cols-2">
-              <Field data-invalid={errors.prefix ? true : undefined}>
-                <FieldLabel htmlFor="svc-prefix">Huruf nomor</FieldLabel>
-                <Input id="svc-prefix" name="prefix" maxLength={3} placeholder="E" className="uppercase" aria-invalid={errors.prefix ? true : undefined} />
-                {errors.prefix ? <FieldError>{errors.prefix}</FieldError> : <FieldDescription>Nomor jadi E-001.</FieldDescription>}
-              </Field>
-              <Field data-invalid={errors.minutes ? true : undefined}>
-                <FieldLabel htmlFor="svc-minutes">Lama layanan awal</FieldLabel>
-                <Input id="svc-minutes" name="minutes" type="number" inputMode="numeric" defaultValue={10} aria-invalid={errors.minutes ? true : undefined} />
-                {errors.minutes ? <FieldError>{errors.minutes}</FieldError> : <FieldDescription>Menit per pelanggan.</FieldDescription>}
-              </Field>
+              <form.Field name="prefix" validators={fieldRule(rules.prefix)}>
+                {(field) => (
+                  <TextField field={field} label="Huruf nomor" maxLength={3} placeholder="E" className="uppercase" description="Nomor jadi E-001." />
+                )}
+              </form.Field>
+              <form.Field name="minutes" validators={fieldRule(rules.minutes)}>
+                {(field) => (
+                  <TextField field={field} label="Lama layanan awal" type="number" inputMode="numeric" description="Menit per pelanggan." />
+                )}
+              </form.Field>
             </div>
           </FieldGroup>
           <DialogFooter>
             <DialogClose render={<Button variant="outline" type="button" />}>Batal</DialogClose>
-            <Button type="submit" disabled={pending}>
-              {pending && <Spinner data-icon="inline-start" />}
-              Simpan
-            </Button>
+            <form.Subscribe selector={(s) => s.isSubmitting}>
+              {(submitting) => (
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Spinner data-icon="inline-start" />}
+                  Simpan
+                </Button>
+              )}
+            </form.Subscribe>
           </DialogFooter>
         </form>
       </DialogContent>

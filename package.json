@@ -14,12 +14,14 @@
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
-    "check:race": "tsx scripts/check-ticket-race.ts"
+    "check:race": "tsx scripts/check-ticket-race.ts",
+    "check:smoke": "tsx scripts/smoke.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
     "@prisma/adapter-mariadb": "^7.10.1",
     "@prisma/client": "^7.10.1",
+    "@tanstack/react-form": "^1.33.5",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "dotenv": "^18.0.10",
