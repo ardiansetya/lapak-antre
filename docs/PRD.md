@@ -159,7 +159,8 @@ Prioritas: **P0** = wajib MVP, **P1** = rilis kedua, **P2** = nanti.
 - **Shared database, shared schema**, setiap tabel bisnis punya kolom `tenantId`.
 - `tenantId` dan `branchId` diambil dari sesi + membership (`requireStaff()`), **tidak pernah** dari input client.
 - Setiap server action staff memanggil `requireStaff()` sendiri dan memfilter query dengan `tenantId` + `branchId` dari sesi. Layout dashboard yang terkunci tidak cukup, karena server action bisa dipanggil langsung.
-- Belum dibangun: Prisma client extension yang menyuntikkan filter `tenantId` otomatis, dan tes isolasi antar-tenant. Keduanya layak ditambah sebelum ada tenant kedua sungguhan.
+- Tes isolasi: `npm run check:isolation` membuka semua halaman dashboard sebagai tenant kedua dan gagal kalau data klinik demo muncul.
+- Belum dibangun: Prisma client extension yang menyuntikkan filter `tenantId` otomatis. Layak ditambah sebelum ada tenant kedua sungguhan.
 
 ### 7.3 Realtime (serverless-friendly)
 - Setiap mutasi antrean menaikkan `Branch.version` (+1).
@@ -369,7 +370,7 @@ model WaitModel {
 | Performa | Halaman tiket: LCP < 2.5 s di 4G lambat; JS halaman pelanggan < 100 KB gzip |
 | Realtime | p95 propagasi < 2 s (poll 1,5 s + render ulang); query poll tetap jauh di bawah kuota gratis TiDB (250 juta read/bulan) |
 | Ketersediaan | Best effort, sesuai paket gratis Vercel Hobby + TiDB Starter (proyek portofolio) |
-| Keamanan | Token tiket 256 bit; CSRF bawaan Server Actions; setiap query staff difilter `tenantId` + `branchId` dari sesi; rate limit per IP belum ada |
+| Keamanan | Token tiket 256 bit; CSRF bawaan Server Actions; setiap query staff difilter `tenantId` + `branchId` dari sesi; penahan banjir 20 tiket per IP per cabang per 10 menit (IP disimpan sebagai hash) |
 | Privasi (UU PDP No. 27/2022) | Data minimal (nama panggilan; HP opsional); nomor HP dihapus/disamarkan 30 hari setelah tiket selesai; halaman kebijakan privasi |
 | Aksesibilitas | Kontras WCAG AA, teks besar di halaman tiket, bisa dipakai satu tangan |
 | Bahasa | Bahasa Indonesia dulu; struktur siap i18n |
@@ -408,8 +409,8 @@ Target pilot: **3–5 usaha nyata** (klinik, barbershop, bengkel) dalam 2 bulan 
 |---|---|---|
 | **M0 — Fondasi** (selesai) | Next.js + Prisma + MySQL, auth staff, multi-tenant, daftar akun membuat tenant/cabang/layanan/loket. Belum: tes isolasi tenant | 1 minggu |
 | **M1 — Antrean inti** (selesai) | Ambil tiket via QR harian, nomor anti-duplikat, konsol loket, halaman tiket, layar TV + suara, SSE realtime, laporan dasar | 1–2 minggu |
-| **M2 — Notifikasi & PWA** | Web Push, service worker, mode offline halaman tiket, display ruang tunggu + suara | 1 minggu |
-| **M3 — Estimasi & laporan** | Baseline EWMA, laporan harian, poster QR | 1 minggu |
+| **M2 — Notifikasi & PWA** (selesai) | Web Push, service worker, mode offline halaman tiket, display ruang tunggu + suara, tiket manual (Q-8) | 1 minggu |
+| **M3 — Estimasi & laporan** (selesai) | Perkiraan dari rata-rata lama layanan, laporan + MAE, poster QR | 1 minggu |
 | **M4 — Pilot** | Deploy, onboarding 1–2 usaha, perbaikan dari lapangan | 2 minggu |
 | **M5 — Pintar** | Regresi + panel akurasi, WhatsApp, heatmap jam sibuk | 2 minggu |
 
