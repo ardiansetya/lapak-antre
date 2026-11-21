@@ -1,17 +1,20 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useActionState } from "react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
+import { TriangleAlertIcon } from "lucide-react"
 
+import { Alert, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
+import { login, register } from "@/lib/actions"
 
 const COPY = {
   login: {
+    action: login,
     title: "Masuk ke dashboard",
     description: "Untuk pemilik usaha dan petugas loket.",
     submit: "Masuk",
@@ -20,8 +23,9 @@ const COPY = {
     switchHref: "/daftar",
   },
   register: {
+    action: register,
     title: "Buat akun usaha",
-    description: "Gratis selama masa pilot. Tidak perlu kartu kredit.",
+    description: "Gratis. Kami siapkan satu cabang, satu layanan, dan satu loket untuk Anda.",
     submit: "Buat akun",
     switchText: "Sudah punya akun?",
     switchLabel: "Masuk",
@@ -29,48 +33,44 @@ const COPY = {
   },
 } as const
 
-export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
+export function AuthForm({ mode, demo }: { mode: keyof typeof COPY; demo?: { email: string; password: string } }) {
   const copy = COPY[mode]
-  const router = useRouter()
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const [pending, startTransition] = useTransition()
-
-  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    const data = new FormData(event.currentTarget)
-    const next: Record<string, string> = {}
-    if (mode === "register" && String(data.get("business") ?? "").trim().length < 3)
-      next.business = "Isi nama usaha minimal 3 huruf."
-    if (!/^\S+@\S+\.\S+$/.test(String(data.get("email") ?? ""))) next.email = "Format email belum benar."
-    if (String(data.get("password") ?? "").length < 8) next.password = "Kata sandi minimal 8 karakter."
-    setErrors(next)
-    if (Object.keys(next).length) return
-    startTransition(async () => {
-      // Mock: replaced by the auth library in M0.
-      await new Promise((r) => setTimeout(r, 600))
-      router.push("/dashboard")
-    })
-  }
+  const [state, action, pending] = useActionState(copy.action, undefined)
+  const errors = state?.fieldErrors ?? {}
 
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{copy.title}</CardTitle>
+        <CardTitle className="text-2xl font-extrabold tracking-tight">{copy.title}</CardTitle>
         <CardDescription>{copy.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} noValidate>
+        <form action={action} noValidate>
           <FieldGroup>
+            {state?.error && (
+              <Alert variant="destructive">
+                <TriangleAlertIcon />
+                <AlertTitle>{state.error}</AlertTitle>
+              </Alert>
+            )}
             {mode === "register" && (
               <Field data-invalid={errors.business ? true : undefined}>
                 <FieldLabel htmlFor="business">Nama usaha</FieldLabel>
-                <Input id="business" name="business" placeholder="Klinik Pratama Kasih Ibu" aria-invalid={errors.business ? true : undefined} />
+                <Input id="business" name="business" placeholder="Klinik Pratama Kasih Ibu" required aria-invalid={errors.business ? true : undefined} />
                 <FieldError>{errors.business}</FieldError>
               </Field>
             )}
             <Field data-invalid={errors.email ? true : undefined}>
               <FieldLabel htmlFor="email">Email</FieldLabel>
-              <Input id="email" name="email" type="email" autoComplete="email" aria-invalid={errors.email ? true : undefined} />
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                defaultValue={demo?.email}
+                aria-invalid={errors.email ? true : undefined}
+              />
               <FieldError>{errors.email}</FieldError>
             </Field>
             <Field data-invalid={errors.password ? true : undefined}>
@@ -80,6 +80,8 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
                 name="password"
                 type="password"
                 autoComplete={mode === "login" ? "current-password" : "new-password"}
+                required
+                defaultValue={demo?.password}
                 aria-invalid={errors.password ? true : undefined}
               />
               {errors.password ? (
@@ -88,10 +90,15 @@ export function AuthForm({ mode }: { mode: keyof typeof COPY }) {
                 mode === "register" && <FieldDescription>Minimal 8 karakter.</FieldDescription>
               )}
             </Field>
-            <Button type="submit" size="lg" className="w-full" disabled={pending}>
+            <Button type="submit" size="lg" className="h-11 w-full text-base" disabled={pending}>
               {pending && <Spinner data-icon="inline-start" />}
               {copy.submit}
             </Button>
+            {demo && (
+              <FieldDescription className="text-center">
+                Akun demo sudah terisi: {demo.email} / {demo.password}
+              </FieldDescription>
+            )}
             <FieldDescription className="text-center">
               {copy.switchText} <Link href={copy.switchHref}>{copy.switchLabel}</Link>
             </FieldDescription>

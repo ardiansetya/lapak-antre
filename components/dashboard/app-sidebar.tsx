@@ -25,6 +25,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { logout } from "@/lib/actions"
 
 const OPERATE = [
   { href: "/dashboard", label: "Ringkasan", icon: LayoutDashboardIcon },
@@ -61,11 +62,11 @@ function NavGroup({ label, items }: { label: string; items: typeof OPERATE }) {
   )
 }
 
-export function AppSidebar() {
+export function AppSidebar({ displayHref, userName }: { displayHref: string; userName: string }) {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="h-14 justify-center px-3">
-        <Logo href="/dashboard" className="text-sm group-data-[collapsible=icon]:[&>span:last-child]:hidden" />
+        <Logo href="/dashboard" className="text-base group-data-[collapsible=icon]:[&>span:last-child]:hidden" />
       </SidebarHeader>
       <SidebarContent>
         <NavGroup label="Operasional" items={OPERATE} />
@@ -74,16 +75,18 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Layar ruang tunggu" render={<Link href="/display/margonda" target="_blank" />}>
+            <SidebarMenuButton tooltip="Layar ruang tunggu" render={<Link href={displayHref} target="_blank" />}>
               <MonitorIcon />
               <span>Layar ruang tunggu</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Keluar" render={<Link href="/masuk" />}>
-              <LogOutIcon />
-              <span>Keluar</span>
-            </SidebarMenuButton>
+            <form action={logout}>
+              <SidebarMenuButton type="submit" tooltip={`Keluar (${userName})`}>
+                <LogOutIcon />
+                <span>Keluar</span>
+              </SidebarMenuButton>
+            </form>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

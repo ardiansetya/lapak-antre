@@ -1,39 +1,33 @@
 import Link from "next/link"
 import {
   ArrowRightIcon,
+  ArrowUpRightIcon,
   BellRingIcon,
-  BuildingIcon,
   CarIcon,
   ChartLineIcon,
+  FootprintsIcon,
   LandmarkIcon,
-  MonitorSmartphoneIcon,
   PillIcon,
   QrCodeIcon,
   ScissorsIcon,
   ShirtIcon,
   StethoscopeIcon,
-  FootprintsIcon,
   WifiOffIcon,
 } from "lucide-react"
 
 import { Logo } from "@/components/brand/logo"
+import { DemoBoard } from "@/components/landing/demo-board"
 import { SiteHeader } from "@/components/landing/site-header"
-import { TicketPreview } from "@/components/queue/ticket-preview"
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
-import { Badge } from "@/components/ui/badge"
+import { FlapCode } from "@/components/queue/flap-code"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 import { Kbd } from "@/components/ui/kbd"
 import { SITE } from "@/lib/site"
 
 const AUDIENCES = [
-  { icon: StethoscopeIcon, label: "Klinik & praktik dokter" },
-  { icon: ScissorsIcon, label: "Barbershop & salon" },
+  { icon: StethoscopeIcon, label: "Klinik" },
+  { icon: ScissorsIcon, label: "Barbershop" },
   { icon: CarIcon, label: "Bengkel" },
   { icon: ShirtIcon, label: "Laundry" },
   { icon: PillIcon, label: "Apotek" },
@@ -68,12 +62,12 @@ const FAQ = [
     a: "Petugas bisa membuatkan nomor dari dashboard dan menyebutkannya langsung. Nomor itu ikut tampil di layar ruang tunggu.",
   },
   {
-    q: "Notifikasinya lewat apa?",
-    a: "Lewat notifikasi browser (Web Push). WhatsApp bisa diaktifkan sebagai cadangan untuk pelanggan yang mengisi nomor HP.",
+    q: "Kenapa QR-nya berganti setiap hari?",
+    a: "Supaya nomor tidak bisa diambil dari rumah memakai foto poster kemarin. Antrean hanya berisi orang yang benar-benar datang.",
   },
   {
     q: "Seberapa akurat perkiraan waktu tunggunya?",
-    a: "Di awal, perkiraan dihitung dari rata-rata lama layanan hari itu. Setelah data cukup, sistem belajar dari pola jam sibuk usaha Anda dan menampilkan seberapa meleset perkiraannya.",
+    a: "Perkiraan dihitung dari lama layanan hari itu dan ditampilkan sebagai rentang. Dashboard menunjukkan seberapa meleset perkiraannya setiap hari.",
   },
   {
     q: "Apakah bisa untuk beberapa cabang?",
@@ -113,171 +107,163 @@ export default function HomePage() {
       />
       <SiteHeader />
       <main>
-        {/* Hero: asymmetric split, real component preview on the right */}
-        <section className="mx-auto grid max-w-6xl items-center gap-16 px-4 pt-14 pb-24 md:grid-cols-[1.15fr_1fr] md:px-6 md:pt-20">
-          <div className="flex flex-col items-start gap-6 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-3 motion-safe:duration-700">
-            <h1 className="max-w-xl text-4xl leading-[1.05] font-semibold tracking-tighter text-balance md:text-6xl">
-              Antre tanpa harus duduk menunggu.
+        {/* Hero: headline left, live departure board right */}
+        <section className="mx-auto grid max-w-6xl items-center gap-14 px-4 pt-14 pb-20 md:px-6 md:pt-20 lg:grid-cols-[1.1fr_1fr]">
+          <div className="flex flex-col items-start gap-7 motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-bottom-3 motion-safe:duration-700">
+            <h1 className="text-5xl leading-[0.95] font-extrabold tracking-[-0.04em] text-balance md:text-7xl">
+              Antre tanpa{" "}
+              <span className="inline-block -rotate-1 rounded-md bg-primary px-2 pb-1 text-primary-foreground">duduk</span>{" "}
+              menunggu.
             </h1>
             <p className="max-w-md text-lg leading-relaxed text-muted-foreground">
               Pelanggan scan QR, dapat nomor di HP, lalu dikabari saat gilirannya dekat. Ruang tunggu Anda jadi lega.
             </p>
             <div className="flex flex-wrap gap-3">
-              <Link href="/daftar" className={buttonVariants({ size: "lg", className: "px-4" })}>
-                Coba gratis
+              <Link href="/demo" className={cn(buttonVariants({ size: "lg" }), "h-11 px-5 text-base")}>
+                Coba ambil nomor
                 <ArrowRightIcon data-icon="inline-end" />
               </Link>
-              <Link
-                href="/tiket/demo"
-                className={buttonVariants({ size: "lg", variant: "outline", className: "px-4" })}
-              >
-                Lihat contoh tiket
+              <Link href="/masuk" className={cn(buttonVariants({ size: "lg", variant: "outline" }), "h-11 px-5 text-base")}>
+                Masuk sebagai petugas
               </Link>
             </div>
           </div>
-          <div className="pb-20 motion-safe:animate-in motion-safe:fade-in motion-safe:zoom-in-95 motion-safe:duration-700 md:rotate-2">
-            <TicketPreview />
+          <div className="motion-safe:animate-in motion-safe:fade-in motion-safe:slide-in-from-right-4 motion-safe:duration-700">
+            <DemoBoard />
           </div>
         </section>
 
-        {/* Audience strip */}
-        <section aria-label="Cocok untuk" className="border-y bg-muted/40">
-          <ul className="mx-auto flex max-w-6xl flex-wrap justify-center gap-x-8 gap-y-3 px-4 py-6 text-sm text-muted-foreground md:justify-between md:px-6">
-            {AUDIENCES.map(({ icon: Icon, label }) => (
-              <li key={label} className="flex items-center gap-2">
-                <Icon className="size-4 text-primary" strokeWidth={1.75} />
+        {/* Audience marquee: the only marquee on the page */}
+        <section aria-label="Cocok untuk" className="overflow-hidden border-y bg-board py-4 text-white/80">
+          <div className="animate-marquee flex w-max gap-12 font-mono text-sm tracking-widest uppercase">
+            {[...AUDIENCES, ...AUDIENCES].map(({ icon: Icon, label }, i) => (
+              <span key={i} aria-hidden={i >= AUDIENCES.length} className="flex items-center gap-3">
+                <Icon className="size-4 text-board-foreground" strokeWidth={1.75} />
                 {label}
-              </li>
+              </span>
             ))}
-          </ul>
+          </div>
         </section>
 
-        {/* How it works: sticky headline + ordered list */}
+        {/* How it works: sticky headline + list */}
         <section id="cara-kerja" className="mx-auto grid max-w-6xl scroll-mt-20 gap-12 px-4 py-24 md:grid-cols-[1fr_1.3fr] md:px-6">
           <div className="md:sticky md:top-28 md:self-start">
-            <h2 className="text-3xl font-semibold tracking-tight text-balance md:text-4xl">
+            <h2 className="text-4xl leading-none font-extrabold tracking-[-0.03em] text-balance md:text-5xl">
               Antrean pindah dari kursi ke saku pelanggan.
             </h2>
-            <p className="mt-4 max-w-sm leading-relaxed text-muted-foreground">
+            <p className="mt-5 max-w-sm leading-relaxed text-muted-foreground">
               Tidak ada perangkat yang perlu dibeli. Cetak QR, tempel di pintu, dan mulai melayani.
             </p>
           </div>
-          <ol className="flex flex-col gap-10">
+          <ol className="flex flex-col">
             {STEPS.map(({ icon: Icon, title, body }) => (
-              <li key={title} className="grid grid-cols-[auto_1fr] gap-5">
-                <span className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <li key={title} className="group grid grid-cols-[auto_1fr] gap-6 border-t py-8 first:border-t-0 first:pt-0">
+                <span className="flex size-12 items-center justify-center rounded-md bg-board text-board-foreground transition-transform group-hover:-rotate-6">
                   <Icon className="size-5" strokeWidth={1.75} />
                 </span>
                 <div>
-                  <h3 className="text-lg font-medium">{title}</h3>
-                  <p className="mt-1.5 max-w-prose leading-relaxed text-muted-foreground">{body}</p>
+                  <h3 className="text-2xl font-bold tracking-tight">{title}</h3>
+                  <p className="mt-2 max-w-prose leading-relaxed text-muted-foreground">{body}</p>
                 </div>
               </li>
             ))}
           </ol>
         </section>
 
-        {/* Features: bento with 5 cells */}
+        {/* Features: bento, five cells */}
         <section id="fitur" className="mx-auto max-w-6xl scroll-mt-20 px-4 pb-24 md:px-6">
-          <h2 className="max-w-2xl text-3xl font-semibold tracking-tight text-balance md:text-4xl">
+          <h2 className="max-w-2xl text-4xl leading-none font-extrabold tracking-[-0.03em] text-balance md:text-5xl">
             Dibuat untuk jam sibuk, bukan untuk presentasi.
           </h2>
-          <div className="mt-10 grid gap-4 md:grid-cols-6">
-            <div className="flex flex-col justify-between gap-8 rounded-2xl bg-primary p-7 text-primary-foreground md:col-span-4">
+          <div className="mt-12 grid gap-3 md:grid-cols-6">
+            <div className="flex flex-col justify-between gap-10 rounded-lg bg-primary p-7 text-primary-foreground md:col-span-4">
               <div>
-                <MonitorSmartphoneIcon className="size-6" strokeWidth={1.75} />
-                <h3 className="mt-4 text-xl font-medium">Satu kali klik, semua layar ikut berubah</h3>
-                <p className="mt-2 max-w-md leading-relaxed opacity-85">
-                  Saat petugas memanggil nomor, HP pelanggan, dashboard, dan TV ruang tunggu langsung diperbarui.
+                <h3 className="text-2xl font-bold tracking-tight">Satu klik, semua layar ikut berubah</h3>
+                <p className="mt-2 max-w-md leading-relaxed opacity-80">
+                  Saat petugas memanggil nomor, HP pelanggan, dashboard, dan TV ruang tunggu diperbarui dalam hitungan detik.
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-3 font-mono">
-                {[
-                  ["Ruang 1", "A-012"],
-                  ["Ruang 2", "A-013"],
-                  ["Apotek", "C-020"],
-                ].map(([room, code]) => (
-                  <div key={room} className="rounded-xl bg-primary-foreground/10 px-4 py-3">
-                    <p className="text-xs opacity-75">{room}</p>
-                    <p className="text-2xl font-semibold tracking-tight">{code}</p>
-                  </div>
-                ))}
+              <div className="flex flex-wrap gap-4">
+                <FlapCode code="A-012" />
+                <FlapCode code="C-020" />
               </div>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-2xl bg-muted p-7 md:col-span-2">
-              <BellRingIcon className="size-6 text-primary" strokeWidth={1.75} />
-              <h3 className="text-xl font-medium">Dikabari sebelum terlambat</h3>
-              <p className="leading-relaxed text-muted-foreground">
-                Pemilik menentukan kapan notifikasi dikirim, misalnya saat tinggal tiga orang.
+            <div className="flex flex-col gap-4 rounded-lg bg-secondary p-7 text-secondary-foreground md:col-span-2">
+              <BellRingIcon className="size-6" strokeWidth={1.75} />
+              <h3 className="text-2xl font-bold tracking-tight">Dikabari sebelum terlambat</h3>
+              <p className="leading-relaxed opacity-80">
+                Pemilik menentukan kapan pelanggan dikabari, misalnya saat tinggal tiga orang.
               </p>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-2xl border p-7 md:col-span-2">
-              <ChartLineIcon className="size-6 text-primary" strokeWidth={1.75} />
-              <h3 className="text-xl font-medium">Perkiraan yang makin tepat</h3>
+            <div className="flex flex-col gap-4 rounded-lg border bg-card p-7 md:col-span-2">
+              <ChartLineIcon className="size-6" strokeWidth={1.75} />
+              <h3 className="text-2xl font-bold tracking-tight">Perkiraan yang jujur</h3>
               <p className="leading-relaxed text-muted-foreground">
-                Waktu tunggu ditampilkan sebagai rentang yang jujur dan belajar dari data usaha Anda sendiri.
+                Ditampilkan sebagai rentang dan dihitung dari lama layanan hari itu.
               </p>
-              <p className="mt-auto font-mono text-3xl font-semibold tracking-tight">15-25 menit</p>
+              <p className="mt-auto font-mono text-3xl font-semibold tracking-tight">15-25 mnt</p>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-2xl border bg-[radial-gradient(var(--color-border)_1px,transparent_1px)] [background-size:14px_14px] p-7 md:col-span-2">
-              <WifiOffIcon className="size-6 text-primary" strokeWidth={1.75} />
-              <h3 className="text-xl font-medium">Sinyal hilang, tiket tetap ada</h3>
+            <div className="flex flex-col gap-4 rounded-lg border bg-[repeating-linear-gradient(135deg,var(--color-border)_0_1px,transparent_1px_10px)] p-7 md:col-span-2">
+              <WifiOffIcon className="size-6" strokeWidth={1.75} />
+              <h3 className="text-2xl font-bold tracking-tight">Sinyal hilang, tiket tetap ada</h3>
               <p className="leading-relaxed text-muted-foreground">
-                Halaman tiket tetap terbuka saat offline dan menyesuaikan diri begitu sinyal kembali.
+                Tiket tetap terbuka saat offline dan menyesuaikan diri begitu sinyal kembali.
               </p>
             </div>
 
-            <div className="flex flex-col gap-4 rounded-2xl bg-muted p-7 md:col-span-2">
-              <BuildingIcon className="size-6 text-primary" strokeWidth={1.75} />
-              <h3 className="text-xl font-medium">Banyak cabang, satu akun</h3>
+            <div className="flex flex-col gap-4 rounded-lg border bg-card p-7 md:col-span-2">
+              <QrCodeIcon className="size-6" strokeWidth={1.75} />
+              <h3 className="text-2xl font-bold tracking-tight">QR yang berganti tiap hari</h3>
               <p className="leading-relaxed text-muted-foreground">
-                Setiap cabang punya layanan, loket, dan QR sendiri. Laporannya bisa dilihat dari satu tempat.
+                Foto poster kemarin tidak bisa dipakai. Antrean hanya berisi orang yang benar-benar datang.
               </p>
             </div>
           </div>
         </section>
 
-        {/* For staff: real console preview + copy */}
-        <section className="border-y bg-muted/40">
+        {/* For staff */}
+        <section className="border-y bg-muted/50">
           <div className="mx-auto grid max-w-6xl items-center gap-12 px-4 py-24 md:grid-cols-2 md:px-6">
-            <Card className="mx-auto w-full max-w-sm">
-              <CardHeader>
-                <CardDescription>Ruang Periksa 1</CardDescription>
-                <CardTitle className="font-mono text-5xl font-semibold tracking-tighter">A-014</CardTitle>
-              </CardHeader>
-              <CardContent className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Badge>Dipanggil</Badge>
-                Agus Prasetyo, ambil nomor 09.16
-              </CardContent>
-              <CardFooter className="justify-between border-t">
-                <span className="text-sm text-muted-foreground">6 orang menunggu</span>
-                <span className="flex items-center gap-2 text-sm font-medium">
+            <div className="mx-auto flex w-full max-w-sm flex-col gap-5 rounded-lg border bg-card p-6 shadow-sm">
+              <p className="font-mono text-xs tracking-widest text-muted-foreground uppercase">Ruang Periksa 1</p>
+              <FlapCode code="A-014" size="lg" />
+              <p className="text-sm text-muted-foreground">Agus, ambil nomor 09.16</p>
+              <div className="flex items-center justify-between border-t pt-4 text-sm">
+                <span className="text-muted-foreground">6 orang menunggu</span>
+                <span className="flex items-center gap-2 font-medium">
                   Panggil berikutnya <Kbd>Spasi</Kbd>
                 </span>
-              </CardFooter>
-            </Card>
+              </div>
+            </div>
             <div>
-              <h2 className="text-3xl font-semibold tracking-tight text-balance md:text-4xl">
+              <h2 className="text-4xl leading-none font-extrabold tracking-[-0.03em] text-balance md:text-5xl">
                 Petugas cukup menekan satu tombol.
               </h2>
-              <p className="mt-4 max-w-md leading-relaxed text-muted-foreground">
-                Panggil, panggil ulang, lewati, selesai. Konsol loket dirancang untuk dipakai sambil melayani, bahkan
-                dari tablet di meja resepsionis.
+              <p className="mt-5 max-w-md leading-relaxed text-muted-foreground">
+                Panggil, panggil ulang, lewati, selesai. Konsol loket dirancang untuk dipakai sambil melayani, bahkan dari
+                tablet di meja resepsionis.
               </p>
+              <Link
+                href="/masuk"
+                className={cn(buttonVariants({ variant: "link" }), "mt-4 px-0 text-base text-foreground underline decoration-primary decoration-2 underline-offset-4")}
+              >
+                Coba dashboard demo
+                <ArrowUpRightIcon data-icon="inline-end" />
+              </Link>
             </div>
           </div>
         </section>
 
         {/* FAQ */}
         <section id="faq" className="mx-auto max-w-2xl scroll-mt-20 px-4 py-24 md:px-6">
-          <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">Tanya jawab</h2>
+          <h2 className="text-4xl font-extrabold tracking-[-0.03em] md:text-5xl">Tanya jawab</h2>
           <Accordion className="mt-8">
             {FAQ.map((item) => (
               <AccordionItem key={item.q} value={item.q}>
-                <AccordionTrigger className="text-base">{item.q}</AccordionTrigger>
+                <AccordionTrigger className="py-4 text-base">{item.q}</AccordionTrigger>
                 <AccordionContent className="leading-relaxed text-muted-foreground">{item.a}</AccordionContent>
               </AccordionItem>
             ))}
@@ -286,12 +272,11 @@ export default function HomePage() {
 
         {/* Final CTA */}
         <section className="mx-auto max-w-6xl px-4 pb-24 md:px-6">
-          <div className="flex flex-col items-start justify-between gap-6 rounded-2xl bg-primary px-8 py-12 text-primary-foreground md:flex-row md:items-center">
-            <div>
-              <h2 className="text-2xl font-semibold tracking-tight md:text-3xl">Gratis selama masa pilot.</h2>
-              <p className="mt-2 max-w-md opacity-85">Siapkan antrean pertama Anda dalam kurang dari sepuluh menit.</p>
-            </div>
-            <Link href="/daftar" className={buttonVariants({ size: "lg", variant: "secondary", className: "px-4" })}>
+          <div className="flex flex-col items-start justify-between gap-8 rounded-lg bg-board px-8 py-14 text-white md:flex-row md:items-end">
+            <h2 className="max-w-xl text-4xl leading-none font-extrabold tracking-[-0.03em] md:text-5xl">
+              Antrean pertama Anda, <span className="text-board-foreground">siap dalam sepuluh menit.</span>
+            </h2>
+            <Link href="/daftar" className={cn(buttonVariants({ size: "lg" }), "h-11 px-5 text-base")}>
               Coba gratis
               <ArrowRightIcon data-icon="inline-end" />
             </Link>
@@ -302,10 +287,10 @@ export default function HomePage() {
       <footer className="border-t">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between md:px-6">
           <Logo className="text-foreground" />
-          <p>Antrean virtual untuk usaha di Indonesia.</p>
+          <p>Proyek portofolio. Antrean virtual untuk usaha di Indonesia.</p>
           <nav aria-label="Tautan footer" className="flex gap-5">
-            <Link href="/masuk" className="hover:text-foreground">Masuk</Link>
-            <Link href="/display/margonda" className="hover:text-foreground">Contoh layar TV</Link>
+            <Link href="/tiket/demo" className="hover:text-foreground">Contoh tiket</Link>
+            <Link href="/klinik-kasih-ibu/margonda/display" className="hover:text-foreground">Contoh layar TV</Link>
           </nav>
         </div>
       </footer>

@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
+import { Bricolage_Grotesque, Geist, Geist_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils"
 
 const fontSans = Geist({ subsets: ["latin"], variable: "--font-sans" })
 const fontMono = Geist_Mono({ subsets: ["latin"], variable: "--font-mono" })
+const fontDisplay = Bricolage_Grotesque({ subsets: ["latin"], variable: "--font-display" })
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE.url),
@@ -31,8 +32,8 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#f8fbf9" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f8f3" },
+    { media: "(prefers-color-scheme: dark)", color: "#1f2129" },
   ],
 }
 
@@ -43,7 +44,7 @@ export default function RootLayout({
     <html
       lang="id"
       suppressHydrationWarning
-      className={cn("antialiased font-sans", fontSans.variable, fontMono.variable)}
+      className={cn("antialiased font-sans", fontSans.variable, fontMono.variable, fontDisplay.variable)}
     >
       <body className="isolate">
         <ThemeProvider>

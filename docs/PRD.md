@@ -143,37 +143,44 @@ Prioritas: **P0** = wajib MVP, **P1** = rilis kedua, **P2** = nanti.
 ### 7.1 Stack
 | Lapisan | Pilihan | Catatan |
 |---|---|---|
-| Framework | Next.js App Router + TypeScript (strict) | Server Components untuk halaman, Server Actions untuk mutasi dashboard, Route Handlers untuk API publik & SSE |
-| DB | MySQL 8 | |
-| ORM | Prisma | Client extension untuk otomatis menyaring `tenantId` |
-| Auth staff | Auth.js atau Better Auth (email + password / magic link) | Pelanggan tidak login |
-| Validasi | Zod | Dipakai bersama di client & server |
-| UI | Tailwind CSS + komponen headless | Mobile-first; halaman pelanggan harus ringan di HP low-end |
-| Realtime | Server-Sent Events (SSE) | Lihat 7.3 |
-| Push | `web-push` (VAPID) | |
-| WhatsApp | WhatsApp Cloud API (resmi) | Penyedia tidak resmi berisiko nomor diblokir |
-| Job terjadwal | Cron (node-cron di worker / cron hosting) | Retrain model, tutup antrean harian, bersihkan data |
-| Deploy | VPS/Docker (Node runtime, bukan serverless) | SSE butuh koneksi panjang |
+| Framework | Next.js 16 App Router + TypeScript (strict) | Server Components untuk halaman, Server Actions untuk semua mutasi, Route Handler untuk SSE |
+| DB | MySQL 8 (lokal) / TiDB Cloud Starter (produksi) | TiDB kompatibel MySQL, skema dan query sama. Hanya `DATABASE_URL` yang beda |
+| ORM | Prisma 7 + `@prisma/adapter-mariadb` | Client di-generate ke `generated/prisma` |
+| Auth staff | Buatan sendiri dengan `node:crypto` | scrypt untuk password, token sesi acak di cookie httpOnly, hanya hash sha256-nya yang disimpan di DB. Pelanggan tidak login |
+| Validasi | Manual di server action | Zod ditunda: aturan validasinya masih sedikit |
+| UI | Tailwind v4 + shadcn/ui (Base UI) | Mobile-first; halaman pelanggan harus ringan di HP low-end |
+| Realtime | Server-Sent Events (SSE) yang membaca kolom `Branch.version` | Lihat 7.3 |
+| Push | `web-push` (VAPID) | M2, belum dibangun |
+| WhatsApp | WhatsApp Cloud API (resmi) | M5, belum dibangun |
+| Job terjadwal | Vercel Cron | Bersihkan data, retrain model |
+| Deploy | **Vercel Hobby + TiDB Cloud Starter, keduanya gratis** | Proyek portofolio, jadi syarat "non-komersial" Vercel Hobby terpenuhi. Region Singapura untuk keduanya |
 
 ### 7.2 Multi-tenancy
-- **Shared database, shared schema**, setiap tabel bisnis punya kolom `tenantId` + index komposit diawali `tenantId`.
-- Akses data dari dashboard selalu lewat `getTenantDb(tenantId)`, yaitu Prisma client extension yang menyuntikkan `where: { tenantId }` pada setiap query, sehingga lupa filter tidak membocorkan data.
-- `tenantId` diambil dari sesi + membership, **tidak pernah** dari input client.
-- Tes otomatis: user tenant A mencoba membaca/mengubah resource tenant B harus gagal.
+- **Shared database, shared schema**, setiap tabel bisnis punya kolom `tenantId`.
+- `tenantId` dan `branchId` diambil dari sesi + membership (`requireStaff()`), **tidak pernah** dari input client.
+- Setiap server action staff memanggil `requireStaff()` sendiri dan memfilter query dengan `tenantId` + `branchId` dari sesi. Layout dashboard yang terkunci tidak cukup, karena server action bisa dipanggil langsung.
+- Belum dibangun: Prisma client extension yang menyuntikkan filter `tenantId` otomatis, dan tes isolasi antar-tenant. Keduanya layak ditambah sebelum ada tenant kedua sungguhan.
 
-### 7.3 Realtime
-- Setiap mutasi antrean (ambil, panggil, selesai, dst.) → tulis ke DB dalam transaksi → publish event `{branchId, version}` ke event bus.
-- Client berlangganan `GET /api/stream/branch/{id}` (SSE). Saat dapat event, client **mengambil ulang snapshot** (`GET /api/branch/{id}/state`), bukan menerapkan diff. Ini lebih sederhana dan otomatis pulih dari event yang hilang.
-- Event bus: in-memory `EventEmitter` untuk MVP (1 instance). Kalau perlu lebih dari 1 instance → Redis pub/sub. Antarmukanya dibuat sama supaya tinggal diganti.
-- Heartbeat tiap 20 detik untuk menjaga koneksi melewati proxy. Fallback polling 10 detik jika SSE gagal.
+### 7.3 Realtime (serverless-friendly)
+- Setiap mutasi antrean menaikkan `Branch.version` (+1).
+- Client membuka `GET /api/branches/{id}/events?v={versiSaatRender}` (SSE). Route ini mengecek `version` di DB setiap 1,5 detik dan mengirim event saat berubah.
+- Saat dapat event, client memanggil `router.refresh()`: Server Component di-render ulang dengan data terbaru. Tidak ada diff yang dikirim, jadi otomatis pulih dari event yang hilang.
+- Kenapa bukan `EventEmitter` di memori: di Vercel setiap request bisa ditangani instance berbeda, sehingga memori tidak dibagi. Kolom di DB dibaca semua instance.
+- Function Vercel Hobby maksimal 300 detik. Stream ditutup di 280 detik, lalu `EventSource` di browser menyambung ulang sendiri (`retry: 2000`).
+- Ping setiap ~15 detik supaya proxy tidak menutup koneksi yang diam.
+- Biaya: satu query ringan per 1,5 detik per layar yang terbuka. Aman untuk skala portofolio dan masih jauh di bawah kuota gratis TiDB. Kalau ramai, ganti ke Redis pub/sub (Upstash punya paket gratis).
 
 ### 7.4 Nomor tiket tanpa duplikat (Q-2)
 Tabel `DailyCounter(serviceId, date, lastNumber)` dengan PK komposit. Dalam satu transaksi:
 ```sql
 INSERT INTO DailyCounter (serviceId, date, lastNumber) VALUES (?, ?, 1)
-ON DUPLICATE KEY UPDATE lastNumber = LAST_INSERT_ID(lastNumber + 1);
+ON DUPLICATE KEY UPDATE lastNumber = lastNumber + 1;
+-- lalu, masih di transaksi yang sama:
+SELECT lastNumber FROM DailyCounter WHERE serviceId = ? AND date = ?;
 ```
-lalu buat `Ticket`. Ditambah unique constraint `(serviceId, date, number)` sebagai pengaman terakhir. Diuji dengan 100 request paralel.
+Upsert mengunci barisnya sampai commit, jadi `SELECT` di transaksi yang sama membaca kenaikannya sendiri dan request lain harus menunggu. Tanpa `LAST_INSERT_ID(expr)`, sehingga jalan sama di MySQL dan TiDB. Ditambah unique constraint `(serviceId, date, number)` sebagai pengaman terakhir. Diuji dengan `npm run check:race` (40 transaksi paralel harus menghasilkan 1..40).
+
+Memanggil tiket berikutnya juga aman dari balapan antar-loket: tiket diklaim dengan `UPDATE ... WHERE id = ? AND status = 'WAITING'`, dan dicoba ulang kalau loket lain sudah lebih dulu.
 
 ### 7.5 Pemicu notifikasi
 Setelah setiap "panggil", hitung ulang posisi tiket `WAITING` di layanan itu. Tiket yang posisinya ≤ N dan belum punya `NotificationLog(type=NEAR)` dimasukkan ke antrean kirim. Pengiriman dilakukan di luar request (fire-and-forget dengan retry), sehingga tombol petugas tetap cepat.
@@ -360,9 +367,9 @@ model WaitModel {
 | Area | Target |
 |---|---|
 | Performa | Halaman tiket: LCP < 2.5 s di 4G lambat; JS halaman pelanggan < 100 KB gzip |
-| Realtime | p95 propagasi < 2 s; 500 koneksi SSE bersamaan per instance |
-| Ketersediaan | 99.5% pada jam operasional (07:00–21:00 WIB) |
-| Keamanan | Token tiket ≥ 128 bit; rate limit endpoint publik; CSRF bawaan Server Actions; semua query dashboard lewat tenant-scoped client |
+| Realtime | p95 propagasi < 2 s (poll 1,5 s + render ulang); query poll tetap jauh di bawah kuota gratis TiDB (250 juta read/bulan) |
+| Ketersediaan | Best effort, sesuai paket gratis Vercel Hobby + TiDB Starter (proyek portofolio) |
+| Keamanan | Token tiket 256 bit; CSRF bawaan Server Actions; setiap query staff difilter `tenantId` + `branchId` dari sesi; rate limit per IP belum ada |
 | Privasi (UU PDP No. 27/2022) | Data minimal (nama panggilan; HP opsional); nomor HP dihapus/disamarkan 30 hari setelah tiket selesai; halaman kebijakan privasi |
 | Aksesibilitas | Kontras WCAG AA, teks besar di halaman tiket, bisa dipakai satu tangan |
 | Bahasa | Bahasa Indonesia dulu; struktur siap i18n |
@@ -376,7 +383,10 @@ model WaitModel {
 | Biaya WhatsApp Cloud API per percakapan | Biaya membengkak | Hanya untuk notifikasi `CALLED`, opt-in per tenant, kuota bulanan |
 | Penghematan baterai Android mematikan push | Notifikasi telat | Kirim `NEAR` cukup awal (N bisa diatur); urgensi tinggi untuk `CALLED` |
 | Ambil tiket dari jauh | Antrean "hantu", no-show tinggi | QR harian berotasi, batas per perangkat, laporan no-show |
-| Satu instance SSE jadi bottleneck | Realtime macet saat ramai | Event bus bisa ditukar ke Redis; fallback polling |
+| SSE di serverless putus setiap 300 detik | Jeda singkat saat menyambung ulang | `EventSource` menyambung ulang sendiri dan membawa versi terakhir, jadi tidak ada perubahan yang terlewat |
+| Poll DB per layar terbuka | Query membengkak kalau ramai | Cukup untuk portofolio; ganti ke Redis pub/sub (Upstash gratis) kalau dipakai sungguhan |
+| Vercel Hobby hanya untuk non-komersial | Tidak boleh dipakai toko sungguhan di paket ini | Saat pilot komersial, pindah ke Vercel Pro atau VPS + Dokploy. Kode tidak berubah |
+| TiDB tanpa trigger dan stored procedure | Fitur MySQL tertentu tidak tersedia | Rancangan tidak memakainya; penomoran tiket sengaja tanpa `LAST_INSERT_ID(expr)` |
 | Data historis sedikit di awal | Estimasi buruk | Baseline + rentang lebar + model hanya aktif jika lebih baik dari baseline |
 
 ## 12. Metrik Keberhasilan
@@ -396,8 +406,8 @@ Target pilot: **3–5 usaha nyata** (klinik, barbershop, bengkel) dalam 2 bulan 
 
 | Fase | Isi | Perkiraan |
 |---|---|---|
-| **M0 — Fondasi** | Setup Next.js + Prisma + MySQL, auth staff, multi-tenant + tes isolasi, CRUD tenant/cabang/layanan/loket | 1 minggu |
-| **M1 — Antrean inti** | Ambil tiket via QR, nomor anti-duplikat, dashboard petugas, halaman tiket, SSE realtime | 1–2 minggu |
+| **M0 — Fondasi** (selesai) | Next.js + Prisma + MySQL, auth staff, multi-tenant, daftar akun membuat tenant/cabang/layanan/loket. Belum: tes isolasi tenant | 1 minggu |
+| **M1 — Antrean inti** (selesai) | Ambil tiket via QR harian, nomor anti-duplikat, konsol loket, halaman tiket, layar TV + suara, SSE realtime, laporan dasar | 1–2 minggu |
 | **M2 — Notifikasi & PWA** | Web Push, service worker, mode offline halaman tiket, display ruang tunggu + suara | 1 minggu |
 | **M3 — Estimasi & laporan** | Baseline EWMA, laporan harian, poster QR | 1 minggu |
 | **M4 — Pilot** | Deploy, onboarding 1–2 usaha, perbaikan dari lapangan | 2 minggu |
@@ -405,7 +415,7 @@ Target pilot: **3–5 usaha nyata** (klinik, barbershop, bengkel) dalam 2 bulan 
 
 ## 14. Pertanyaan Terbuka
 
-1. Auth staff: Auth.js atau Better Auth? (keduanya cocok dengan Prisma + MySQL)
-2. Hosting: VPS mana (biaya vs latensi Indonesia)? Perlu dicek apakah reverse proxy mendukung SSE tanpa buffering.
+1. ~~Auth staff~~ Terjawab: buatan sendiri dengan `node:crypto` (scrypt + token sesi). Cukup untuk email/password; pindah ke Better Auth kalau butuh magic link atau OAuth.
+2. ~~Hosting~~ Terjawab: Vercel Hobby + TiDB Cloud Starter, semua gratis. Alternatif kalau butuh server yang selalu menyala: Oracle Always Free + Dokploy.
 3. Model bisnis: gratis selamanya untuk pilot, lalu freemium (mis. gratis ≤ 300 tiket/bulan)?
 4. Apakah klinik pilot butuh fitur prioritas (Q-9) lebih awal?

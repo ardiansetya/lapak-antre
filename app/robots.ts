@@ -4,7 +4,7 @@ import { SITE } from "@/lib/site"
 
 export default function robots(): MetadataRoute.Robots {
   return {
-    rules: { userAgent: "*", allow: "/", disallow: ["/dashboard", "/tiket", "/display"] },
+    rules: { userAgent: "*", allow: "/", disallow: ["/dashboard", "/tiket", "/api", "/demo"] },
     sitemap: `${SITE.url}/sitemap.xml`,
   }
 }

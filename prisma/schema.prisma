@@ -1,0 +1,165 @@
+// Lapak Antre data model. See docs/PRD.md section 9.
+// Every business table carries tenantId; staff queries always filter by the session's tenant.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Tenant {
+  id        String       @id @default(cuid())
+  slug      String       @unique
+  name      String
+  createdAt DateTime     @default(now())
+  branches  Branch[]
+  members   Membership[]
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  sessions     Session[]
+}
+
+model Membership {
+  id       String @id @default(cuid())
+  tenantId String
+  userId   String
+  role     Role
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([userId])
+}
+
+enum Role {
+  OWNER
+  STAFF
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  /// sha256 of the cookie token; the raw token never touches the DB
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Branch {
+  id       String    @id @default(cuid())
+  tenantId String
+  slug     String
+  name     String
+  address  String    @default("")
+  hours    String    @default("")
+  timezone String    @default("Asia/Jakarta")
+  /// secret for the daily rotating QR code (PRD A-1)
+  qrSecret String
+  /// bumped on every queue change; the SSE stream watches it
+  version  Int       @default(0)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  services Service[]
+  counters Counter[]
+
+  @@unique([tenantId, slug])
+}
+
+model Service {
+  id             String           @id @default(cuid())
+  tenantId       String
+  branchId       String
+  name           String
+  prefix         String           @db.VarChar(3)
+  description    String           @default("")
+  isOpen         Boolean          @default(false)
+  dailyQuota     Int?
+  notifyAhead    Int              @default(3)
+  defaultMinutes Int              @default(10)
+  createdAt      DateTime         @default(now())
+  branch         Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  tickets        Ticket[]
+  counters       CounterService[]
+
+  @@unique([branchId, prefix])
+  @@index([tenantId])
+}
+
+model Counter {
+  id       String           @id @default(cuid())
+  tenantId String
+  branchId String
+  name     String
+  isActive Boolean          @default(true)
+  branch   Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  services CounterService[]
+  tickets  Ticket[]
+
+  @@index([tenantId, branchId])
+}
+
+model CounterService {
+  counterId String
+  serviceId String
+  counter   Counter @relation(fields: [counterId], references: [id], onDelete: Cascade)
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([counterId, serviceId])
+  @@index([serviceId])
+}
+
+model DailyCounter {
+  serviceId  String
+  date       DateTime @db.Date
+  lastNumber Int
+
+  @@id([serviceId, date])
+}
+
+model Ticket {
+  id               String       @id @default(cuid())
+  tenantId         String
+  branchId         String
+  serviceId        String
+  counterId        String?
+  date             DateTime     @db.Date
+  number           Int
+  code             String       @db.VarChar(8)
+  accessToken      String       @unique
+  name             String       @db.VarChar(40)
+  phone            String?      @db.VarChar(20)
+  status           TicketStatus @default(WAITING)
+  callCount        Int          @default(0)
+  predictedMinutes Int?
+  createdAt        DateTime     @default(now())
+  calledAt         DateTime?
+  servingAt        DateTime?
+  doneAt           DateTime?
+  service          Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  counter          Counter?     @relation(fields: [counterId], references: [id], onDelete: SetNull)
+
+  @@unique([serviceId, date, number])
+  @@index([branchId, date, status])
+  @@index([serviceId, date, status])
+}
+
+enum TicketStatus {
+  WAITING
+  CALLED
+  SERVING
+  DONE
+  NO_SHOW
+  CANCELLED
+}

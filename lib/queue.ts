@@ -1,43 +1,6 @@
-// Domain types and pure queue logic. Shared by UI now, by server code later.
+// Pure queue logic, shared by server and client. No DB or Next imports, so node:test can run it.
 
-export type TicketStatus =
-  | "WAITING"
-  | "CALLED"
-  | "SERVING"
-  | "DONE"
-  | "NO_SHOW"
-  | "CANCELLED"
-
-export type Service = {
-  id: string
-  name: string
-  prefix: string
-  description: string
-  isOpen: boolean
-  avgServiceMinutes: number
-  activeCounters: number
-  notifyAhead: number
-  dailyQuota: number | null
-}
-
-export type Counter = {
-  id: string
-  name: string
-  serviceIds: string[]
-  isActive: boolean
-}
-
-export type Ticket = {
-  id: string
-  number: number
-  code: string
-  serviceId: string
-  name: string
-  status: TicketStatus
-  /** "HH:MM" local time the ticket was taken */
-  takenAt: string
-  counterName?: string
-}
+export type TicketStatus = "WAITING" | "CALLED" | "SERVING" | "DONE" | "NO_SHOW" | "CANCELLED"
 
 export const STATUS_LABEL: Record<TicketStatus, string> = {
   WAITING: "Menunggu",

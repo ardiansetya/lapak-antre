@@ -1,10 +1,11 @@
 "use client"
 
-import { useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react"
 import Link from "next/link"
-import { BellIcon, BellRingIcon, SmartphoneIcon, TicketXIcon, WifiOffIcon } from "lucide-react"
+import { BellIcon, BellRingIcon, CircleCheckIcon, SmartphoneIcon, TicketXIcon, WifiOffIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { FlapCode, Perforation } from "@/components/queue/flap-code"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
@@ -19,13 +20,12 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from "@/components/ui/item"
-import { Progress } from "@/components/ui/progress"
-import { Separator } from "@/components/ui/separator"
+import { Spinner } from "@/components/ui/spinner"
 import { useOnline } from "@/hooks/use-online"
-import { estimateWait, formatTicketCode, formatWaitRange } from "@/lib/queue"
+import { cancelTicket } from "@/lib/actions"
+import type { TicketStatus } from "@/lib/queue"
 import { cn } from "@/lib/utils"
 
 // Tiny store so the permission badge re-renders after requestPermission().
@@ -51,48 +51,41 @@ function notify(title: string, body: string) {
   toast(title, { description: body })
 }
 
-const DEMO_TICK_MS = 7000
-const CALLED_COUNTER = "Ruang Periksa 2"
-
-type Props = {
-  tenantName: string
-  serviceName: string
+export type TicketView = {
+  token: string
   code: string
-  customerName: string
-  aheadAtStart: number
-  avgServiceMinutes: number
-  activeCounters: number
+  name: string
+  status: TicketStatus
+  ahead: number
+  counterName: string | null
+  servingCode: string | null
+  estimate: string
   notifyAhead: number
+  serviceName: string
+  branchName: string
+  tenantName: string
+  takeAgainHref: string
 }
 
-export function LiveTicket(props: Props) {
-  const { code, aheadAtStart, notifyAhead } = props
+const timeFormat = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+
+export function LiveTicket({ ticket, renderedAt }: { ticket: TicketView; renderedAt: string }) {
+  const { code, status, ahead, notifyAhead } = ticket
   const online = useOnline()
   const permission = useSyncExternalStore(subscribePermission, readPermission, () => "default" as const)
-  const [ahead, setAhead] = useState(aheadAtStart)
-  const [status, setStatus] = useState<"WAITING" | "CALLED" | "CANCELLED">("WAITING")
-  const [updatedAt, setUpdatedAt] = useState(() => new Date())
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const aheadRef = useRef(aheadAtStart)
+  const [cancelling, startCancel] = useTransition()
 
-  // Demo stand-in for the SSE stream: the queue advances on a timer while online.
+  // Notify on the transitions that matter: getting close, and being called.
+  const prev = useRef({ status, ahead })
   useEffect(() => {
-    if (status !== "WAITING" || !online) return
-    const id = setInterval(() => {
-      // `ahead` = people in front of this ticket. Below zero means this ticket was called.
-      const next = aheadRef.current - 1
-      aheadRef.current = next
-      setUpdatedAt(new Date())
-      if (next < 0) {
-        setStatus("CALLED")
-        notify(`Nomor ${code} dipanggil`, `Silakan menuju ${CALLED_COUNTER}.`)
-        return
-      }
-      setAhead(next)
-      if (next === notifyAhead) notify("Giliran Anda sudah dekat", `Tinggal ${next} orang lagi.`)
-    }, DEMO_TICK_MS)
-    return () => clearInterval(id)
-  }, [status, online, code, notifyAhead])
+    const before = prev.current
+    prev.current = { status, ahead }
+    if (status === "CALLED" && before.status !== "CALLED")
+      notify(`Nomor ${code} dipanggil`, `Silakan menuju ${ticket.counterName ?? "loket"} sekarang.`)
+    else if (status === "WAITING" && ahead < notifyAhead && before.ahead >= notifyAhead)
+      notify("Giliran Anda sudah dekat", ahead === 0 ? "Anda berikutnya." : `Tinggal ${ahead} orang lagi.`)
+  }, [status, ahead, notifyAhead, code, ticket.counterName])
 
   async function enableNotifications() {
     if (readPermission() === "unsupported") {
@@ -104,38 +97,43 @@ export function LiveTicket(props: Props) {
     if (readPermission() === "granted") toast.success("Notifikasi aktif")
   }
 
-  function cancelTicket() {
-    setConfirmOpen(false)
-    setStatus("CANCELLED")
-    toast("Tiket dibatalkan")
+  function confirmCancel() {
+    startCancel(async () => {
+      const result = await cancelTicket(ticket.token)
+      if (result?.error) toast.error(result.error)
+      setConfirmOpen(false)
+    })
   }
 
-  if (status === "CANCELLED") {
+  if (status === "CANCELLED" || status === "DONE" || status === "NO_SHOW") {
+    const copy = {
+      CANCELLED: { icon: TicketXIcon, title: `Tiket ${code} dibatalkan`, body: "Nomor Anda sudah dilepas." },
+      DONE: { icon: CircleCheckIcon, title: "Terima kasih sudah antre", body: `Layanan untuk ${code} sudah selesai.` },
+      NO_SHOW: {
+        icon: TicketXIcon,
+        title: `Nomor ${code} terlewat`,
+        body: "Anda dipanggil tetapi belum datang. Temui petugas, nomor Anda bisa dikembalikan ke antrean.",
+      },
+    }[status]
     return (
       <Empty className="border">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <TicketXIcon />
+            <copy.icon />
           </EmptyMedia>
-          <EmptyTitle>Tiket {code} dibatalkan</EmptyTitle>
-          <EmptyDescription>Nomor Anda sudah dilepas. Anda bisa mengambil nomor baru kapan saja.</EmptyDescription>
+          <EmptyTitle>{copy.title}</EmptyTitle>
+          <EmptyDescription>{copy.body}</EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Link href="/klinik-kasih-ibu/margonda" className={buttonVariants()}>
-            Ambil nomor baru
+          <Link href={ticket.takeAgainHref} className={buttonVariants({ variant: "outline" })}>
+            Kembali ke halaman layanan
           </Link>
         </EmptyContent>
       </Empty>
     )
   }
 
-  const [prefix, rawNumber] = code.split("-")
-  const servingCode = formatTicketCode(prefix, Number(rawNumber) - ahead - 1)
-  const called = status === "CALLED"
-  const estimate = formatWaitRange(
-    estimateWait({ ahead, avgServiceMinutes: props.avgServiceMinutes, activeCounters: props.activeCounters }),
-  )
-  const progress = ((aheadAtStart + 1 - ahead) / (aheadAtStart + 1)) * 100
+  const called = status === "CALLED" || status === "SERVING"
 
   return (
     <div className="flex flex-col gap-4">
@@ -143,75 +141,73 @@ export function LiveTicket(props: Props) {
         <Alert>
           <WifiOffIcon />
           <AlertTitle>Anda sedang offline</AlertTitle>
-          <AlertDescription>
-            Ini status terakhir yang kami terima. Halaman akan diperbarui otomatis begitu sinyal kembali.
-          </AlertDescription>
+          <AlertDescription>Ini status terakhir yang kami terima. Halaman diperbarui otomatis begitu sinyal kembali.</AlertDescription>
         </Alert>
       )}
 
-      <Card
+      <article
         className={cn(
-          "transition-colors",
-          called && "bg-primary text-primary-foreground ring-primary motion-safe:animate-in motion-safe:zoom-in-95",
+          "overflow-hidden rounded-lg border bg-card transition-colors",
+          called && "border-transparent bg-primary text-primary-foreground",
         )}
       >
-        <CardHeader>
-          <CardDescription className={cn(called && "text-primary-foreground/80")}>
-            {props.tenantName}, {props.serviceName}
-          </CardDescription>
-          <CardTitle className="font-mono text-7xl font-semibold tracking-tighter">{code}</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5 p-6">
+          <div className="flex items-start justify-between gap-3">
+            <p className={cn("text-sm text-muted-foreground", called && "text-primary-foreground/75")}>
+              {ticket.tenantName}
+              <br />
+              {ticket.serviceName}
+            </p>
+            <Badge variant={called ? "outline" : "secondary"} className={cn(called && "border-primary-foreground/40 text-primary-foreground")}>
+              {status === "SERVING" ? "Dilayani" : called ? "Dipanggil" : "Menunggu"}
+            </Badge>
+          </div>
+          <FlapCode code={code} size="lg" />
           {called ? (
-            <div aria-live="assertive" className="flex flex-col gap-1">
-              <p className="text-xl font-medium">Giliran Anda, {props.customerName}.</p>
-              <p className="opacity-85">Silakan menuju {CALLED_COUNTER} sekarang.</p>
+            <div aria-live="assertive">
+              <p className="font-heading text-2xl font-extrabold tracking-tight">Giliran Anda, {ticket.name}.</p>
+              <p className="mt-1 opacity-80">
+                {status === "SERVING" ? "Sedang dilayani di" : "Silakan menuju"} {ticket.counterName ?? "loket"}.
+              </p>
             </div>
           ) : (
-            <>
-              <div aria-live="polite" className="flex items-center justify-between gap-3">
-                <p className="text-lg font-medium">
-                  {ahead === 0 ? "Anda berikutnya" : `Ada ${ahead} orang di depan Anda`}
-                </p>
-                <Badge variant="secondary">Menunggu</Badge>
-              </div>
-              <Progress value={progress} aria-label="Kemajuan antrean" />
-              <Separator />
-              <dl className="grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <dt className="text-muted-foreground">Sedang dilayani</dt>
-                  <dd className="font-mono text-xl font-medium">{servingCode}</dd>
-                </div>
-                <div>
-                  <dt className="text-muted-foreground">Perkiraan dipanggil</dt>
-                  <dd className="text-xl font-medium">{estimate}</dd>
-                </div>
-              </dl>
-            </>
+            <p aria-live="polite" className="font-heading text-2xl font-extrabold tracking-tight">
+              {ahead === 0 ? "Anda berikutnya." : `${ahead} orang di depan Anda.`}
+            </p>
           )}
-        </CardContent>
-        <CardFooter
-          className={cn("justify-between text-xs", called ? "border-primary-foreground/20 bg-transparent" : "text-muted-foreground")}
-        >
-          <span>
-            Diperbarui{" "}
-            <time suppressHydrationWarning dateTime={updatedAt.toISOString()}>
-              {updatedAt.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
-            </time>
-          </span>
-          <span>Mode demo</span>
-        </CardFooter>
-      </Card>
+        </div>
+        {!called && (
+          <>
+            <Perforation />
+            <dl className="grid grid-cols-2 gap-3 p-6 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Sedang dipanggil</dt>
+                <dd className="mt-1 font-mono text-xl font-semibold">{ticket.servingCode ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Perkiraan dipanggil</dt>
+                <dd className="mt-1 text-xl font-semibold">{ticket.estimate}</dd>
+              </div>
+            </dl>
+          </>
+        )}
+        <p className={cn("border-t px-6 py-3 text-xs text-muted-foreground", called && "border-primary-foreground/20 text-primary-foreground/70")}>
+          Diperbarui otomatis, terakhir{" "}
+          <time suppressHydrationWarning dateTime={renderedAt}>
+            {timeFormat.format(new Date(renderedAt))}
+          </time>
+        </p>
+      </article>
 
       {!called && (
         <Item variant="outline">
           <ItemMedia variant="icon">{permission === "granted" ? <BellRingIcon /> : <BellIcon />}</ItemMedia>
           <ItemContent>
             <ItemTitle>{permission === "granted" ? "Notifikasi aktif" : "Kabari saya saat giliran dekat"}</ItemTitle>
-            <ItemDescription>
+            <ItemDescription className="line-clamp-none">
               {permission === "granted"
-                ? `Kami kabari saat tinggal ${notifyAhead} orang dan saat Anda dipanggil.`
-                : "Anda boleh menutup halaman ini setelah notifikasi aktif."}
+                ? `Kami kabari saat tinggal ${notifyAhead} orang dan saat Anda dipanggil, selama halaman ini terbuka.`
+                : "Aktifkan supaya HP bergetar saat giliran Anda dekat."}
             </ItemDescription>
           </ItemContent>
           {permission !== "granted" && (
@@ -235,7 +231,7 @@ export function LiveTicket(props: Props) {
         </ItemContent>
       </Item>
 
-      {!called && (
+      {status === "WAITING" && (
         <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
           <AlertDialogTrigger render={<Button variant="ghost" className="self-center text-muted-foreground" />}>
             Batalkan tiket
@@ -243,13 +239,12 @@ export function LiveTicket(props: Props) {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Batalkan nomor {code}?</AlertDialogTitle>
-              <AlertDialogDescription>
-                Posisi Anda akan diberikan ke orang berikutnya dan tidak bisa dikembalikan.
-              </AlertDialogDescription>
+              <AlertDialogDescription>Posisi Anda diberikan ke orang berikutnya dan tidak bisa dikembalikan.</AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Tetap antre</AlertDialogCancel>
-              <AlertDialogAction variant="destructive" onClick={cancelTicket}>
+              <AlertDialogAction variant="destructive" onClick={confirmCancel} disabled={cancelling}>
+                {cancelling && <Spinner data-icon="inline-start" />}
                 Ya, batalkan
               </AlertDialogAction>
             </AlertDialogFooter>
