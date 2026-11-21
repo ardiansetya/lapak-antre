@@ -86,6 +86,17 @@ Selama deploy berjalan, kode lama dan skema baru sempat hidup bersamaan. Jadi se
 - **Menambah** kolom yang boleh kosong (`String?`) atau punya nilai default selalu aman.
 - **Mengganti nama atau menghapus** kolom dibagi dua deploy. Deploy pertama menambah kolom baru dan kode menulis ke keduanya. Deploy kedua menghapus kolom lama setelah tidak ada kode yang memakainya. Pola ini disebut *expand and contract*.
 
+### Smoke test setelah deploy
+
+Script yang sama dengan CI bisa diarahkan ke produksi lewat `BASE_URL`. Ini memastikan deploy benar-benar sehat, bukan sekadar build-nya sukses.
+
+```bash
+DATABASE_URL="<URL TiDB produksi>" BASE_URL=https://lapak-antre.vercel.app npm run check:smoke
+DATABASE_URL="<URL TiDB produksi>" BASE_URL=https://lapak-antre.vercel.app npm run check:isolation
+```
+
+Kedua script membuat sesi atau tenant sementara di database, lalu menghapusnya lagi.
+
 ### Rollback
 
 Kalau versi produksi bermasalah, buka **Deployments** di dashboard Vercel, pilih deploy sebelumnya yang sehat, lalu klik **Instant Rollback**. Perubahan database tidak ikut mundur. Itu sebabnya aturan migrasi di atas penting.

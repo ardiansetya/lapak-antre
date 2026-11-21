@@ -6,7 +6,7 @@ import { PrismaClient } from "../generated/prisma/client"
 import { createAdapter } from "../lib/db-adapter"
 import { dailyQrCode, localDate } from "../lib/crypto"
 
-const BASE = "http://localhost:3100"
+const BASE = process.env.BASE_URL ?? "http://localhost:3100"
 const db = new PrismaClient({ adapter: createAdapter() })
 
 async function get(path: string, cookie?: string) {
