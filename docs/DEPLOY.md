@@ -12,9 +12,9 @@ Setelah setup awal ini, deploy berjalan otomatis setiap ada push ke GitHub. Penj
 	CREATE DATABASE lapak_antre;
 	CREATE DATABASE lapak_antre_preview;
 	```
-3. Salin connection string MySQL dari halaman **Connect**, lalu tambahkan `?ssl=true` di akhir URL. TiDB Cloud mewajibkan TLS.
+3. Salin connection string MySQL dari halaman **Connect**, lalu tambahkan `?sslaccept=strict` di akhir URL. TiDB Cloud mewajibkan TLS. Parameter ini dibaca oleh Prisma CLI (migrasi) dan oleh adapter aplikasi di `lib/db-adapter.ts`. Jangan pakai `?ssl=true`, karena Prisma CLI mengabaikannya lalu tersambung tanpa TLS dan ditolak TiDB.
 	```
-	mysql://USER.root:PASSWORD@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/lapak_antre?ssl=true
+	mysql://USER.root:PASSWORD@gateway01.ap-southeast-1.prod.aws.tidbcloud.com:4000/lapak_antre?sslaccept=strict
 	```
 
 ## 2. Hubungkan Vercel
@@ -26,7 +26,7 @@ Isi environment variable di **Settings > Environment Variables**:
 | Nama | Production | Preview |
 |---|---|---|
 | `DATABASE_URL` | URL TiDB ke `lapak_antre` | URL TiDB ke `lapak_antre_preview` |
-| `NEXT_PUBLIC_SITE_URL` | `https://lapak-antre.vercel.app` | (kosongkan) |
+| `NEXT_PUBLIC_SITE_URL` | `https://lapak-antre.vercel.app` | (kosongkan, otomatis memakai `VERCEL_URL`) |
 | `NEXT_PUBLIC_VAPID_PUBLIC_KEY` | sudah terisi | sudah terisi |
 | `VAPID_PRIVATE_KEY` | sudah terisi | sudah terisi |
 | `VAPID_SUBJECT` | sudah terisi | sudah terisi |
@@ -41,8 +41,8 @@ Region function sudah diatur ke Singapura lewat `"regions": ["sin1"]` di `vercel
 2. Perintah build di `vercel.json` adalah `prisma migrate deploy && next build`. Tabel dibuat otomatis di database environment tersebut.
 3. Isi data demo sekali saja dari laptop, memakai URL produksi:
 	```bash
-	DATABASE_URL="mysql://...lapak_antre?ssl=true" npm run db:seed
-	DATABASE_URL="mysql://...lapak_antre?ssl=true" npm run check:race
+	DATABASE_URL="mysql://...lapak_antre?sslaccept=strict" npm run db:seed
+	DATABASE_URL="mysql://...lapak_antre?sslaccept=strict" npm run check:race
 	```
 	`check:race` harus mencetak `ok`, sebagai bukti bahwa penomoran tiket juga aman di TiDB.
 

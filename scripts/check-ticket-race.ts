@@ -16,7 +16,10 @@ async function main() {
   await db.dailyCounter.deleteMany({ where: { serviceId: service.id, date } })
   try {
     const numbers = await Promise.all(
-      Array.from({ length: N }, () => db.$transaction((tx) => nextTicketNumber(tx, service.id, date))),
+      // 40 transactions queue on one row through a 5-connection pool; over a remote link (TiDB) that exceeds Prisma's 2 s default wait.
+      Array.from({ length: N }, () =>
+        db.$transaction((tx) => nextTicketNumber(tx, service.id, date), { maxWait: 60_000, timeout: 60_000 }),
+      ),
     )
     const sorted = numbers.toSorted((a, b) => a - b)
     assert.deepEqual(sorted, Array.from({ length: N }, (_, i) => i + 1))
