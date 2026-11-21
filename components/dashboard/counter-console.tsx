@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { MegaphoneIcon, RepeatIcon, RotateCcwIcon, UserCheckIcon, UserXIcon, UsersIcon } from "lucide-react"
 import { toast } from "sonner"
 
+import { ManualTicket } from "@/components/dashboard/manual-ticket"
 import { FlapCode } from "@/components/queue/flap-code"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -26,6 +27,7 @@ type Props = {
   queue: ConsoleTicket[]
   skipped: ConsoleTicket[]
   history: { id: string; code: string; status: TicketStatus }[]
+  services: { id: string; name: string; prefix: string; isOpen: boolean }[]
 }
 
 const MAX_CALLS = 3
@@ -35,7 +37,7 @@ function isTyping(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
 }
 
-export function CounterConsole({ counters, counter, current, queue, skipped, history }: Props) {
+export function CounterConsole({ counters, counter, current, queue, skipped, history, services }: Props) {
   const router = useRouter()
   const [pending, startTransition] = useTransition()
 
@@ -160,6 +162,7 @@ export function CounterConsole({ counters, counter, current, queue, skipped, his
       </div>
 
       <div className="flex flex-col gap-4">
+        <ManualTicket key={counter.id} services={services} />
         <Card size="sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

@@ -53,7 +53,19 @@ export async function takeTicket(input: {
     if (active) redirect(`/tiket/${active.accessToken}`)
   }
 
-  const date = todayFor(branch.timezone)
+  const issued = await issueTicket(service, { name, phone })
+  if ("error" in issued) return issued
+  // shortcut: no per-IP rate limit yet; add one (e.g. Upstash) before real traffic
+  jar.set(cookieName, issued.token, { httpOnly: true, sameSite: "lax", maxAge: 86_400, path: "/" })
+  redirect(`/tiket/${issued.token}`)
+}
+
+/** Creates the next ticket for a service: quota, number, estimate, and the realtime bump. Shared by customers and staff. */
+async function issueTicket(
+  service: { id: string; tenantId: string; branchId: string; prefix: string; name: string; dailyQuota: number | null; defaultMinutes: number; branch: { timezone: string } },
+  customer: { name: string; phone: string },
+): Promise<{ token: string; code: string } | { error: string }> {
+  const date = todayFor(service.branch.timezone)
   if (service.dailyQuota != null) {
     const taken = await db.ticket.count({ where: { serviceId: service.id, date } })
     if (taken >= service.dailyQuota) return { error: `Kuota ${service.name} hari ini sudah habis.` }
@@ -66,27 +78,27 @@ export async function takeTicket(input: {
   const predicted = estimateWait({ ahead: waiting, avgServiceMinutes: service.defaultMinutes, activeCounters })
 
   const token = randomToken()
-  await db.$transaction(async (tx) => {
+  const code = await db.$transaction(async (tx) => {
     const number = await nextTicketNumber(tx, service.id, date)
+    const code = formatTicketCode(service.prefix, number)
     await tx.ticket.create({
       data: {
         tenantId: service.tenantId,
-        branchId: branch.id,
+        branchId: service.branchId,
         serviceId: service.id,
         date,
         number,
-        code: formatTicketCode(service.prefix, number),
+        code,
         accessToken: token,
-        name,
-        phone: phone || null,
+        name: customer.name,
+        phone: customer.phone || null,
         predictedMinutes: Math.round(predicted.minutes),
       },
     })
-    await tx.branch.update({ where: { id: branch.id }, data: { version: { increment: 1 } } })
+    await tx.branch.update({ where: { id: service.branchId }, data: { version: { increment: 1 } } })
+    return code
   })
-  // shortcut: no per-IP rate limit yet; add one (e.g. Upstash) before real traffic
-  jar.set(cookieName, token, { httpOnly: true, sameSite: "lax", maxAge: 86_400, path: "/" })
-  redirect(`/tiket/${token}`)
+  return { token, code }
 }
 
 /** Stores a browser's push subscription for a ticket. Public: the ticket's access token is the only credential. */
@@ -158,6 +170,25 @@ export async function callNext(counterId: string) {
     }
   }
   return { error: "Antrean sedang ramai, coba lagi." }
+}
+
+/** Staff issues a ticket for a walk-in without a phone (PRD Q-8). No QR check: staff are on site. */
+export async function createManualTicket(input: { serviceId: string; name: string }): Promise<
+  FormState | { code: string }
+> {
+  const staff = await requireStaff()
+  const fieldErrors = validate(input, { name: rules.customerName })
+  if (fieldErrors) return { fieldErrors }
+  const service = await db.service.findFirst({
+    where: { id: text(input.serviceId), tenantId: staff.tenant.id, branchId: staff.branch.id },
+    include: { branch: true },
+  })
+  if (!service) return { error: "Layanan tidak ditemukan." }
+  if (!service.isOpen) return { error: `${service.name} sedang tutup.` }
+  const issued = await issueTicket(service, { name: text(input.name), phone: "" })
+  if ("error" in issued) return issued
+  revalidatePath("/dashboard", "layout")
+  return { code: issued.code }
 }
 
 type Transition = "recall" | "start" | "finish" | "noShow" | "restore"

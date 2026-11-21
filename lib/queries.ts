@@ -162,7 +162,7 @@ export async function getConsole(staff: Staff, counterId?: string) {
   const counters = await db.counter.findMany({
     where: { branchId: staff.branch.id, isActive: true },
     orderBy: { name: "asc" },
-    include: { services: { select: { serviceId: true } } },
+    include: { services: { select: { serviceId: true, service: { select: { name: true, prefix: true, isOpen: true } } } } },
   })
   const counter = counters.find((c) => c.id === counterId) ?? counters[0]
   if (!counter) return { counters: [], counter: null }
@@ -196,6 +196,7 @@ export async function getConsole(staff: Staff, counterId?: string) {
     branchId: staff.branch.id,
     counters: counters.map((c) => ({ id: c.id, name: c.name })),
     counter: { id: counter.id, name: counter.name },
+    services: counter.services.map((s) => ({ id: s.serviceId, ...s.service })),
     current,
     queue,
     skipped,
