@@ -16,7 +16,8 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "prisma db seed",
     "check:race": "tsx scripts/check-ticket-race.ts",
-    "check:smoke": "tsx scripts/smoke.ts"
+    "check:smoke": "tsx scripts/smoke.ts",
+    "check:isolation": "tsx scripts/check-isolation.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
