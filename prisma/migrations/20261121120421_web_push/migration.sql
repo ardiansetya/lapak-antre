@@ -1,5 +1,5 @@
 -- AlterTable
-ALTER TABLE `ticket` ADD COLUMN `nearNotifiedAt` DATETIME(3) NULL;
+ALTER TABLE `Ticket` ADD COLUMN `nearNotifiedAt` DATETIME(3) NULL;
 
 -- CreateTable
 CREATE TABLE `PushSubscription` (

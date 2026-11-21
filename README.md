@@ -8,6 +8,7 @@ Proyek ini adalah proyek portofolio. Semua hosting yang dipakai gratis.
 - Cara kerja dan alasan desain: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Pelajaran dari bug selama pengerjaan: [docs/LESSONS.md](docs/LESSONS.md)
 - Langkah deploy gratis: [docs/DEPLOY.md](docs/DEPLOY.md)
+- Pipeline CI/CD dan alur kerja PR: [docs/CI-CD.md](docs/CI-CD.md)
 
 ## Stack
 
@@ -87,7 +88,9 @@ Kalau halaman terus berkedip atau tidak bisa diklik setelah `npm install` atau `
 | `prisma/` | Skema, migrasi, dan seed |
 | `public/sw.js` | Service worker untuk offline dan push |
 | `scripts/` | Skrip uji yang bisa dijalankan ulang |
-| `docs/` | PRD, arsitektur, pelajaran, dan langkah deploy |
+| `docs/` | PRD, arsitektur, pelajaran, deploy, dan CI/CD |
+| `.github/workflows/ci.yml` | Pemeriksaan otomatis di GitHub Actions |
+| `vercel.json` | Region dan perintah build Vercel (migrasi lalu build) |
 
 | File di `lib/` | Isi |
 |---|---|
@@ -108,4 +111,3 @@ Bagian ini cocok dijadikan latihan lanjutan.
 - Model regresi untuk perkiraan waktu tunggu (PRD bagian 8 tahap 2). Saat ini memakai rata-rata lama layanan.
 - Heatmap jam sibuk per hari, ekspor CSV, dan tiket prioritas.
 - Pemilih cabang di dashboard. Saat ini petugas bekerja di cabang pertama tenant.
-- Deploy ke Vercel dan TiDB. Langkahnya ada di [docs/DEPLOY.md](docs/DEPLOY.md).

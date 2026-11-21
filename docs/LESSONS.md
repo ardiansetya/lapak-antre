@@ -60,3 +60,22 @@ Setiap bug di dokumen ini benar-benar terjadi saat proyek dibangun. Setiap bagia
 **Perbaikan.** File dipulihkan dengan `git checkout`. Perubahannya diterapkan ulang satu per satu.
 
 **Pelajaran.** Commit kecil dan sering membuat kesalahan seperti ini murah untuk diperbaiki.
+
+## Migrasi lolos di Windows tapi gagal di Linux
+
+**Gejala.** Run CI pertama gagal di langkah **Apply migrations** dengan `Table 'lapak_antre.ticket' doesn't exist`. Di laptop semua migrasi berjalan normal.
+
+**Penyebab.** Migrasi `init` membuat tabel `Ticket`. Dua migrasi berikutnya ditulis Prisma sebagai ``ALTER TABLE `ticket` ``, dengan huruf kecil. MySQL di Windows memakai `lower_case_table_names=1`, sehingga nama tabel disimpan dan dibandingkan dalam huruf kecil. Prisma membaca nama itu dari database lalu menulisnya apa adanya. MySQL di Linux dan TiDB membedakan huruf besar dan kecil, jadi `ticket` dan `Ticket` adalah dua tabel berbeda.
+
+**Perbaikan.** Kedua file migrasi diubah menjadi `Ticket`. Hal ini aman karena migrasi itu belum pernah dijalankan di database produksi. Checksum di tabel `_prisma_migrations` lokal ikut diperbarui. Nilainya adalah SHA-256 dari isi `migration.sql`.
+
+**Pelajaran.** Inilah gunanya CI. Pemeriksaan berjalan di sistem operasi yang sama dengan produksi, bukan di laptop. Setiap kali membuat migrasi di Windows, periksa nama tabel di file SQL-nya sebelum commit. CI akan menangkapnya kalau terlewat.
+## Prisma CLI tersambung ke TiDB tanpa TLS
+
+**Gejala.** `prisma db execute` ke TiDB gagal dengan `Connections using insecure transport are prohibited`. Padahal URL sudah berakhiran `?ssl=true`.
+
+**Penyebab.** `?ssl=true` hanya dibaca oleh adapter kita di `lib/db-adapter.ts`. Prisma CLI (migrate, db execute) membaca parameter TLS lain, yaitu `sslaccept`. CLI mengabaikan `ssl=true` lalu tersambung tanpa TLS.
+
+**Perbaikan.** Semua URL TiDB memakai `?sslaccept=strict`. Adapter sekarang menyalakan TLS kalau parameter itu ada. Satu parameter dipahami oleh dua pembaca.
+
+**Pelajaran.** Kalau sebuah nilai dibaca oleh lebih dari satu program, uji setiap pembacanya. Aplikasi yang berjalan belum membuktikan migrasi juga berjalan.
