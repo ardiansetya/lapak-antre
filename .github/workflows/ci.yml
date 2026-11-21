@@ -1,0 +1,80 @@
+# CI: every push to main and every pull request must pass these checks.
+# Production deploys are done by Vercel's Git integration (see docs/CI-CD.md).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch cancels the older, still-running check.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Throwaway MySQL 8 for this run only. Same engine family as local dev and TiDB.
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: lapak_antre
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      DATABASE_URL: mysql://root:root@127.0.0.1:3306/lapak_antre
+      NEXT_PUBLIC_SITE_URL: http://localhost:3100
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install (runs prisma generate via postinstall)
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed demo data
+        run: npm run db:seed
+
+      - name: Ticket numbering under concurrency
+        run: npm run check:race
+
+      - name: Build
+        run: npm run build
+
+      - name: Start the production server
+        run: |
+          npx next start -p 3100 &
+          for i in $(seq 60); do curl -sf -o /dev/null http://localhost:3100 && exit 0; sleep 1; done
+          echo "server did not start" && exit 1
+
+      - name: Smoke test
+        run: npm run check:smoke
+
+      - name: Tenant isolation
+        run: npm run check:isolation
