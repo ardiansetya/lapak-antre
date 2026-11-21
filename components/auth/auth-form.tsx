@@ -12,7 +12,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FieldDescription, FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { login, register } from "@/lib/actions"
-import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule, orServerError } from "@/lib/form"
 import { rules } from "@/lib/validation"
 
 const COPY = {
@@ -43,7 +43,7 @@ export function AuthForm({ mode, demo }: { mode: keyof typeof COPY; demo?: { ema
     onSubmit: async ({ value }) => {
       setFormError(undefined)
       // On success both actions redirect to the dashboard, so only failures return here.
-      const result = mode === "login" ? await login(value) : await register(value)
+      const result = await orServerError(mode === "login" ? login(value) : register(value))
       setFormError(result?.error)
       applyServerErrors(form, result?.fieldErrors)
     },

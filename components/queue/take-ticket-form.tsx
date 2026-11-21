@@ -21,7 +21,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Spinner } from "@/components/ui/spinner"
 import { takeTicket } from "@/lib/actions"
-import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule, orServerError } from "@/lib/form"
 import { rules } from "@/lib/validation"
 
 export type ServiceOption = {
@@ -49,7 +49,7 @@ export function TakeTicketForm({
     onSubmit: async ({ value }) => {
       setFormError(undefined)
       // On success the action redirects to the new ticket, so only failures return here.
-      const result = await takeTicket({ ...value, branch: branchSlug, k: qrCode })
+      const result = await orServerError(takeTicket({ ...value, branch: branchSlug, k: qrCode }))
       setFormError(result?.error)
       applyServerErrors(form, result?.fieldErrors)
     },

@@ -145,6 +145,8 @@ model Ticket {
   predictedMinutes Int?
   /// set once the "almost your turn" push went out, so it is sent at most once
   nearNotifiedAt   DateTime?
+  /// sha256(branch qrSecret + client IP) for rate limiting; the raw IP is never stored
+  clientKey        String?      @db.VarChar(64)
   createdAt        DateTime     @default(now())
   calledAt         DateTime?
   servingAt        DateTime?
@@ -155,6 +157,7 @@ model Ticket {
 
   @@unique([serviceId, date, number])
   @@index([branchId, date, status])
+  @@index([branchId, clientKey, createdAt])
   @@index([serviceId, date, status])
 }
 

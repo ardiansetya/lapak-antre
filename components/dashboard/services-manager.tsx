@@ -24,7 +24,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { addService, setServiceOpen } from "@/lib/actions"
-import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule, orServerError } from "@/lib/form"
 import { rules } from "@/lib/validation"
 
 type ServiceRow = {
@@ -44,7 +44,7 @@ function AddServiceDialog() {
     defaultValues: { name: "", prefix: "", minutes: "10" },
     listeners: clearServerErrorOnChange,
     onSubmit: async ({ value }) => {
-      const result = await addService(value)
+      const result = await orServerError(addService(value))
       if (result?.error) toast.error(result.error)
       applyServerErrors(form, result?.fieldErrors)
       if (result) return

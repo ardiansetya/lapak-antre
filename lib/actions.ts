@@ -1,12 +1,12 @@
 "use server"
 
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { revalidatePath } from "next/cache"
 import { after } from "next/server"
 
 import { createSession, destroySession, requireStaff, type Staff } from "@/lib/auth"
-import { hashPassword, isValidQrCode, localDate, randomToken, verifyPassword } from "@/lib/crypto"
+import { hashPassword, isValidQrCode, localDate, randomToken, sha256, verifyPassword } from "@/lib/crypto"
 import { db } from "@/lib/db"
 import { estimateWait, formatTicketCode } from "@/lib/queue"
 import { notifyQueue } from "@/lib/push"
@@ -18,6 +18,8 @@ export type FormState = { error?: string; fieldErrors?: Record<string, string> }
 
 // Server actions are public endpoints: inputs arrive untyped, so every field is coerced and re-validated here.
 const text = (value: unknown) => String(value ?? "").trim()
+const RATE_LIMIT = 20
+const RATE_WINDOW_MS = 10 * 60_000
 const bump = (branchId: string) => db.branch.update({ where: { id: branchId }, data: { version: { increment: 1 } } })
 
 // ---------- Public: customers ----------
@@ -53,9 +55,17 @@ export async function takeTicket(input: {
     if (active) redirect(`/tiket/${active.accessToken}`)
   }
 
-  const issued = await issueTicket(service, { name, phone })
+  // Flood guard only. Mobile carriers (CGNAT) and clinic Wi-Fi put many real customers behind one IP,
+  // so the limit is high; the daily QR and the per-device cookie are the real abuse controls.
+  const forwarded = (await headers()).get("x-forwarded-for")?.split(",")[0]?.trim()
+  const clientKey = sha256(`${branch.qrSecret}:${forwarded || "unknown"}`)
+  const recent = await db.ticket.count({
+    where: { branchId: branch.id, clientKey, createdAt: { gte: new Date(Date.now() - RATE_WINDOW_MS) } },
+  })
+  if (recent >= RATE_LIMIT) return { error: "Terlalu banyak nomor diambil dari jaringan ini. Coba lagi beberapa menit lagi." }
+
+  const issued = await issueTicket(service, { name, phone, clientKey })
   if ("error" in issued) return issued
-  // shortcut: no per-IP rate limit yet; add one (e.g. Upstash) before real traffic
   jar.set(cookieName, issued.token, { httpOnly: true, sameSite: "lax", maxAge: 86_400, path: "/" })
   redirect(`/tiket/${issued.token}`)
 }
@@ -63,7 +73,7 @@ export async function takeTicket(input: {
 /** Creates the next ticket for a service: quota, number, estimate, and the realtime bump. Shared by customers and staff. */
 async function issueTicket(
   service: { id: string; tenantId: string; branchId: string; prefix: string; name: string; dailyQuota: number | null; defaultMinutes: number; branch: { timezone: string } },
-  customer: { name: string; phone: string },
+  customer: { name: string; phone: string; clientKey?: string },
 ): Promise<{ token: string; code: string } | { error: string }> {
   const date = todayFor(service.branch.timezone)
   if (service.dailyQuota != null) {
@@ -92,6 +102,7 @@ async function issueTicket(
         accessToken: token,
         name: customer.name,
         phone: customer.phone || null,
+        clientKey: customer.clientKey ?? null,
         predictedMinutes: Math.round(predicted.minutes),
       },
     })

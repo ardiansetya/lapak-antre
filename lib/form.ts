@@ -14,6 +14,20 @@ export const clearServerErrorOnChange = {
   },
 }
 
+/**
+ * Awaits a server action and turns an unexpected failure (a 500) into a message the form can show,
+ * instead of a button that silently does nothing. Redirects are framework control flow: rethrown.
+ */
+export async function orServerError<T>(action: Promise<T>): Promise<T | { error: string; fieldErrors?: undefined }> {
+  try {
+    return await action
+  } catch (error) {
+    if (String((error as { digest?: unknown })?.digest ?? "").startsWith("NEXT_REDIRECT")) throw error
+    console.error(error)
+    return { error: "Terjadi kesalahan di server. Coba lagi sebentar lagi." }
+  }
+}
+
 /** Field validators from a lib/validation rule: checked when the field loses focus and on submit. */
 export function fieldRule(rule: (value: string) => string | undefined) {
   const run = ({ value }: { value: string }) => rule(value)

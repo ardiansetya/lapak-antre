@@ -11,7 +11,7 @@ import { FieldGroup } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import { createManualTicket } from "@/lib/actions"
-import { applyServerErrors, clearServerErrorOnChange, fieldRule } from "@/lib/form"
+import { applyServerErrors, clearServerErrorOnChange, fieldRule, orServerError } from "@/lib/form"
 import { rules } from "@/lib/validation"
 
 type ServiceChoice = { id: string; name: string; prefix: string; isOpen: boolean }
@@ -23,7 +23,7 @@ export function ManualTicket({ services }: { services: ServiceChoice[] }) {
     defaultValues: { serviceId: open[0]?.id ?? "", name: "" },
     listeners: clearServerErrorOnChange,
     onSubmit: async ({ value }) => {
-      const result = await createManualTicket(value)
+      const result = await orServerError(createManualTicket(value))
       if (result && "code" in result) {
         toast.success(`Nomor ${result.code} untuk ${value.name.trim()}`, { description: "Sebutkan nomornya ke pelanggan." })
         form.reset({ serviceId: value.serviceId, name: "" })
