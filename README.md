@@ -1,5 +1,9 @@
 # Lapak Antre
 
+[![CI](https://github.com/ardiansetya/lapak-antre/actions/workflows/ci.yml/badge.svg)](https://github.com/ardiansetya/lapak-antre/actions/workflows/ci.yml)
+
+**Demo live: https://lapak-antre.vercel.app** (login demo `demo@lapakantre.test` / `demo12345`)
+
 Antrean virtual untuk klinik dan UMKM. Pelanggan memindai QR di lokasi, mendapat nomor di HP, lalu dikabari saat gilirannya dekat. Petugas memanggil nomor dari konsol loket, dan layar TV ruang tunggu ikut berubah lengkap dengan suara panggilan.
 
 Proyek ini adalah proyek portofolio. Semua hosting yang dipakai gratis.
@@ -73,8 +77,8 @@ Kalau halaman terus berkedip atau tidak bisa diklik setelah `npm install` atau `
 | `npm run db:migrate` | `prisma migrate dev`. Setelah mengubah skema, jalankan juga `npx prisma generate` |
 | `npm run db:seed` | Isi ulang data demo. Hanya klinik demo dan akun demo yang dihapus |
 | `npm run check:race` | Uji 40 pengambilan nomor bersamaan. Hasilnya harus 1 sampai 40 tanpa duplikat |
-| `npm run check:smoke` | Buka semua halaman lewat HTTP. Butuh `npm run dev` yang sedang berjalan |
-| `npm run check:isolation` | Pastikan tenant lain tidak bisa melihat data klinik demo. Butuh `npm run dev` |
+| `npm run check:smoke` | Buka semua halaman lewat HTTP. Butuh `npm run dev` yang sedang berjalan, atau `BASE_URL` ke deployment lain |
+| `npm run check:isolation` | Pastikan tenant lain tidak bisa melihat data klinik demo. Butuh `npm run dev`, atau `BASE_URL` |
 
 ## Struktur folder
 
@@ -103,11 +107,55 @@ Kalau halaman terus berkedip atau tidak bisa diklik setelah `npm install` atau `
 | `queue.ts` | Rumus perkiraan waktu tunggu |
 | `db.ts`, `db-adapter.ts` | Koneksi Prisma ke MySQL atau TiDB |
 
-## Yang belum dibangun
+## Status fitur
 
-Bagian ini cocok dijadikan latihan lanjutan.
+Kode di kurung adalah ID kebutuhan di [docs/PRD.md](docs/PRD.md). P0 artinya wajib untuk MVP, P1 untuk rilis kedua, dan P2 untuk nanti.
 
-- Notifikasi WhatsApp lewat WhatsApp Cloud API. Butuh akun Meta Business.
-- Model regresi untuk perkiraan waktu tunggu (PRD bagian 8 tahap 2). Saat ini memakai rata-rata lama layanan.
-- Heatmap jam sibuk per hari, ekspor CSV, dan tiket prioritas.
-- Pemilih cabang di dashboard. Saat ini petugas bekerja di cabang pertama tenant.
+### Sudah selesai
+
+**Pelanggan**
+- [x] Ambil nomor tanpa login lewat QR yang kodenya berganti setiap hari (Q-1, A-1)
+- [x] Nomor `{prefix}-{urut}` yang reset setiap hari dan tidak pernah dobel, juga teruji di TiDB (Q-2)
+- [x] Satu tiket aktif per HP per layanan, dan batas 20 tiket per IP per 10 menit (A-2)
+- [x] Batalkan tiket sendiri (Q-7)
+- [x] Halaman tiket ikut berubah tanpa dimuat ulang, dan tersambung ulang otomatis kalau koneksi putus (R-1, R-2)
+- [x] Perkiraan waktu tunggu sebagai rentang, misalnya "15–25 menit" (E-1, E-2)
+- [x] Web Push saat giliran dekat dan saat dipanggil, masing-masing sekali per tiket (N-1, N-2)
+- [x] Bisa diinstal sebagai PWA (O-1)
+
+**Petugas dan owner**
+- [x] Daftar akun yang langsung membuat usaha, cabang, layanan, dan loket (T-1, T-4)
+- [x] Data antar-usaha terisolasi, dibuktikan oleh `check:isolation` (T-1)
+- [x] Konsol loket: panggil, panggil ulang, lewati, kembalikan ke antrean, dan selesai (Q-3, Q-4)
+- [x] Satu loket bisa melayani beberapa layanan (Q-5)
+- [x] Buka atau tutup layanan secara manual, dan kuota harian (Q-6, sebagian)
+- [x] Tiket manual untuk pelanggan tanpa HP (Q-8)
+- [x] Layar TV ruang tunggu dengan suara panggilan bahasa Indonesia (R-3)
+- [x] Laporan harian dan akurasi perkiraan waktu tunggu (MAE) per layanan (L-1, E-4)
+- [x] Poster QR siap cetak
+
+**Infrastruktur**
+- [x] CI di GitHub Actions: lint, typecheck, unit test, migrasi, uji balapan nomor, build, smoke test, dan uji isolasi
+- [x] CD ke Vercel. Setiap PR mendapat Preview, dan setiap merge ke `main` langsung ke produksi
+- [x] Deploy gratis di Vercel Hobby dan TiDB Cloud Starter, region Singapura
+
+### Belum selesai
+
+| ID | Fitur | Prioritas | Catatan |
+|---|---|---|---|
+| T-3 | Owner mengundang petugas lewat email atau link | P0 | Saat ini hanya owner yang bisa login |
+| T-2 | Peran `SUPERADMIN` global | P0 | Baru ada `OWNER` dan `STAFF` |
+| Q-6 | Layanan tertutup otomatis di luar jam operasional | P0 | Buka/tutup manual dan kuota harian sudah jalan |
+| O-4 | Konsol loket menolak aksi dengan jelas saat offline | P0 | Peringatan offline baru ada di halaman tiket pelanggan |
+| O-2, O-3 | Halaman tiket tetap tampil saat offline, lalu sinkron ulang | P0 | Sudah dibuat, tapi belum diuji di build produksi |
+| N-3 | Notifikasi WhatsApp | P1 | Butuh akun Meta Business |
+| N-4 | Log pengiriman notifikasi | P1 | |
+| E-3 | Model regresi untuk perkiraan waktu tunggu | P1 | Saat ini memakai rata-rata lama layanan |
+| L-2 | Heatmap jam sibuk per hari | P1 | |
+| T-5 | Logo dan warna per usaha | P1 | |
+| L-3 | Ekspor CSV | P2 | |
+| Q-9 | Tiket prioritas untuk lansia dan ibu hamil | P2 | |
+| A-3 | Geofence radius cabang | P2 | |
+| — | Pemilih cabang di dashboard | — | Saat ini petugas bekerja di cabang pertama usaha |
+
+Fitur yang belum selesai cocok dijadikan latihan. Kerjakan lewat alur PR di [docs/CI-CD.md](docs/CI-CD.md).
