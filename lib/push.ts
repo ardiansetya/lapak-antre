@@ -17,11 +17,12 @@ async function pushToTicket(ticketId: string, message: Message) {
   await Promise.all(
     subscriptions.map(async (s) => {
       try {
-        await sendNotification(
+        const res = await sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           JSON.stringify(message),
           { urgency: "high", TTL: 15 * 60 },
         )
+        console.info("web push sent", message.tag, res.statusCode, new URL(s.endpoint).host)
       } catch (error) {
         // 404/410: the browser dropped this subscription for good.
         if (error instanceof WebPushError && (error.statusCode === 404 || error.statusCode === 410))
@@ -38,7 +39,10 @@ async function pushToTicket(ticketId: string, message: Message) {
  * update, so two calls racing each other still send it once.
  */
 export async function notifyQueue(calledTicketId: string) {
-  if (!enabled) return
+  if (!enabled) {
+    console.warn("web push disabled: NEXT_PUBLIC_VAPID_PUBLIC_KEY or VAPID_PRIVATE_KEY is empty")
+    return
+  }
   const called = await db.ticket.findUnique({
     where: { id: calledTicketId },
     include: { counter: { select: { name: true } }, service: { select: { notifyAhead: true } } },
